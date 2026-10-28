@@ -1,21 +1,167 @@
 ---
+import { Image } from "astro:assets";
+import { getCollection, render } from "astro:content";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { site } from "../site";
 
-// TODO: Facebook profile username for the Messenger link (DECISIONS.md, open question 3).
-const messengerUrl = "https://m.me/TODO";
-const email = "contact@perocho.com";
+const services = (await getCollection("services")).sort((a, b) => a.data.order - b.data.order);
+const renderedServices = await Promise.all(
+	services.map(async (service) => ({ ...service, Content: (await render(service)).Content })),
+);
+
+const repairs = (await getCollection("repairs")).sort(
+	(a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
+);
+const renderedRepairs = await Promise.all(
+	repairs.map(async (repair) => ({ ...repair, Content: (await render(repair)).Content })),
+);
+
+const monthFormat = new Intl.DateTimeFormat("en-CA", { month: "long", year: "numeric" });
 ---
 
-<BaseLayout
-	title="Perocho ER"
-	description="Family-run electronics repair and cleaning. Site coming soon."
->
+<BaseLayout title={site.name} description={site.description}>
+	<header>
+		<p class="name">{site.name}</p>
+		<nav aria-label="Sections">
+			<a href="#services">Services</a>
+			{renderedRepairs.length > 0 && <a href="#repairs">Past repairs</a>}
+			<a href="#contact">Contact</a>
+		</nav>
+		<h1>{site.tagline}</h1>
+		<p>Family-run electronics repair and cleaning.</p>
+		<a class="button" href={site.messengerUrl}>Message us</a>
+	</header>
+
 	<main>
-		<h1>Perocho ER</h1>
-		<p>The ER for your electronics. Our full site is coming soon.</p>
-		<p>
-			<a href={messengerUrl}>Message us on Messenger</a> or email
-			<a href={`mailto:${email}`}>{email}</a>.
-		</p>
+		<section id="services" aria-labelledby="services-title">
+			<h2 id="services-title">Services</h2>
+			<ul class="cards">
+				{
+					renderedServices.map(({ data, Content }) => (
+						<li class="card">
+							<h3>{data.title}</h3>
+							<Content />
+							<p class="price">{data.price ?? "Message us for a quote"}</p>
+						</li>
+					))
+				}
+			</ul>
+		</section>
+
+		<section aria-labelledby="how-title">
+			<h2 id="how-title">How it works</h2>
+			<ol>
+				<li>Message us on Messenger or by email about your device.</li>
+				<li>We reply with a quote.</li>
+				<li>Drop it off, or we come to you.</li>
+				<li>Pay by cash or Interac e-Transfer when it's done.</li>
+			</ol>
+		</section>
+
+		{
+			renderedRepairs.length > 0 && (
+				<section id="repairs" aria-labelledby="repairs-title">
+					<h2 id="repairs-title">Past repairs</h2>
+					<ul class="cards">
+						{renderedRepairs.map(({ data, Content }) => (
+							<li class="card">
+								<h3>{data.title}</h3>
+								<p class="meta">
+									{data.device} · <time datetime={data.date.toISOString()}>{monthFormat.format(data.date)}</time>
+								</p>
+								<div class="photos">
+									<figure>
+										<Image src={data.before} alt={data.beforeAlt} width={400} />
+										<figcaption>Before</figcaption>
+									</figure>
+									<figure>
+										<Image src={data.after} alt={data.afterAlt} width={400} />
+										<figcaption>After</figcaption>
+									</figure>
+								</div>
+								<Content />
+							</li>
+						))}
+					</ul>
+				</section>
+			)
+		}
+
+		<section id="contact" aria-labelledby="contact-title">
+			<h2 id="contact-title">Contact</h2>
+			<p>
+				<a href={site.messengerUrl}>Message us on Messenger</a> or email
+				<a href={`mailto:${site.email}`}>{site.email}</a>.
+			</p>
+			<p>To get a quote faster, tell us:</p>
+			<ul>
+				<li>the device and its model</li>
+				<li>what's wrong with it</li>
+				<li>a photo, if you can</li>
+			</ul>
+			{site.serviceArea && <p>Service area: {site.serviceArea}</p>}
+			{site.hours && <p>Hours: {site.hours}</p>}
+		</section>
 	</main>
+
+	<footer>
+		<p>
+			© {new Date().getFullYear()} {site.name} · <a href={`mailto:${site.email}`}>{site.email}</a>
+		</p>
+	</footer>
 </BaseLayout>
+
+<style>
+	nav {
+		display: flex;
+		gap: 1rem;
+	}
+	.name {
+		font-weight: bold;
+	}
+	.button {
+		display: inline-block;
+		padding: 0.5rem 1rem;
+		border: 1px solid currentColor;
+		border-radius: 0.25rem;
+		text-decoration: none;
+	}
+	section {
+		margin-top: 2.5rem;
+	}
+	.cards {
+		list-style: none;
+		padding: 0;
+		display: grid;
+		gap: 1rem;
+	}
+	.card {
+		padding: 1rem;
+		border: 1px solid color-mix(in srgb, currentColor 25%, transparent);
+		border-radius: 0.5rem;
+	}
+	.card h3 {
+		margin-top: 0;
+	}
+	.price,
+	.meta {
+		font-weight: 600;
+	}
+	.photos {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+	}
+	figure {
+		margin: 0;
+	}
+	figure :global(img) {
+		width: 100%;
+		height: auto;
+		border-radius: 0.25rem;
+	}
+	footer {
+		margin-top: 3rem;
+		font-size: 0.875rem;
+	}
+</style>
