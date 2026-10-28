@@ -1,0 +1,21 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+
+// TODO: Facebook profile username for the Messenger link (DECISIONS.md, open question 3).
+const messengerUrl = "https://m.me/TODO";
+const email = "contact@perocho.com";
+---
+
+<BaseLayout
+	title="Perocho ER"
+	description="Family-run electronics repair and cleaning. Site coming soon."
+>
+	<main>
+		<h1>Perocho ER</h1>
+		<p>The ER for your electronics. Our full site is coming soon.</p>
+		<p>
+			<a href={messengerUrl}>Message us on Messenger</a> or email
+			<a href={`mailto:${email}`}>{email}</a>.
+		</p>
+	</main>
+</BaseLayout>
