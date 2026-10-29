@@ -115,26 +115,61 @@ export async function listEvents(
 	}));
 }
 
-export async function createHold(
+export interface NewEvent {
+	summary: string;
+	description: string;
+	start: number;
+	end: number;
+	timeZone: string;
+}
+
+// A request starts as a tentative hold; a tech confirming it turns it into a booking.
+const look = (booked: boolean) =>
+	booked
+		? { status: "confirmed", colorId: "10" } // Basil: settled.
+		: { status: "tentative", colorId: "5" }; // Banana: stands out until a tech confirms it.
+
+export async function createEvent(
 	token: string,
 	calendarId: string,
-	hold: { summary: string; description: string; start: number; end: number; timeZone: string },
+	event: NewEvent,
+	booked = false,
 ): Promise<{ id: string; created: number }> {
 	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?fields=id,created`, {
 		method: "POST",
 		headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
 		body: JSON.stringify({
-			summary: hold.summary,
-			description: hold.description,
-			start: { dateTime: new Date(hold.start).toISOString(), timeZone: hold.timeZone },
-			end: { dateTime: new Date(hold.end).toISOString(), timeZone: hold.timeZone },
-			status: "tentative",
-			colorId: "5", // Banana: stands out until a tech confirms it.
+			summary: event.summary,
+			description: event.description,
+			start: { dateTime: new Date(event.start).toISOString(), timeZone: event.timeZone },
+			end: { dateTime: new Date(event.end).toISOString(), timeZone: event.timeZone },
+			...look(booked),
 		}),
 	});
 	if (!response.ok) throw new Error(`google insert: ${response.status} ${await response.text()}`);
-	const event = (await response.json()) as Pick<GoogleEvent, "id" | "created">;
-	return { id: event.id, created: Date.parse(event.created) };
+	const created = (await response.json()) as Pick<GoogleEvent, "id" | "created">;
+	return { id: created.id, created: Date.parse(created.created) };
+}
+
+// Turns a hold into a booking with a new title and description, keeping its time. False when the
+// hold is gone (a tech deleted it by hand), so the caller can create the booking instead.
+export async function bookEvent(
+	token: string,
+	calendarId: string,
+	eventId: string,
+	event: Pick<NewEvent, "summary" | "description">,
+): Promise<boolean> {
+	const response = await fetch(
+		`${API}/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?fields=id`,
+		{
+			method: "PATCH",
+			headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+			body: JSON.stringify({ ...event, ...look(true) }),
+		},
+	);
+	if (response.status === 404 || response.status === 410) return false;
+	if (!response.ok) throw new Error(`google patch: ${response.status} ${await response.text()}`);
+	return true;
 }
 
 export async function deleteEvent(token: string, calendarId: string, eventId: string): Promise<void> {

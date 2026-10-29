@@ -71,11 +71,16 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Deploy worker
+      # New migrations first, so the deployed code never runs against an older schema. Migrations
+      # must therefore keep working with the code that's live until the deploy finishes.
+      - name: Migrate database and deploy worker
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: worker
+          command: |
+            d1 migrations apply DB --remote
+            deploy
 
   # Runs after the worker deployed or was skipped, never after it (or the change check) failed.
   build:

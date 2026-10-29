@@ -1,4 +1,4 @@
-// The intake form: parsing, validation and the text the techs receive.
+// The intake form: parsing, validation and the summary every email and event about it shows.
 
 export interface Intake {
 	name: string;
@@ -71,7 +71,10 @@ export function formatTime(ms: number, timeZone: string): string {
 	}).format(ms);
 }
 
-export function describe(intake: Intake, time: string | null, tech: string | null): string {
+// Ends a sentence on a time without doubling the period of "a.m." and "p.m.".
+export const stop = (time: string) => (time.endsWith(".") ? time : `${time}.`);
+
+export function describe(intake: Intake, time: string | null): string {
 	const lines = [
 		["Name", intake.name],
 		["Email", intake.email],
@@ -79,7 +82,6 @@ export function describe(intake: Intake, time: string | null, tech: string | nul
 		["Device", intake.device],
 		["Visit", VISIT_LABELS[intake.visit]],
 		["Requested time", time ?? "None picked; arrange with them"],
-		["Held on", tech ? `${tech}'s calendar (tentative)` : ""],
 	]
 		.filter(([, value]) => value)
 		.map(([label, value]) => `${label}: ${value}`);
@@ -91,6 +93,3 @@ export function describe(intake: Intake, time: string | null, tech: string | nul
 
 // What the request is for: the chosen service, else the device.
 export const what = (intake: Intake) => intake.service || intake.device;
-
-export const subject = (intake: Intake, time: string | null) =>
-	`Repair request: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`;

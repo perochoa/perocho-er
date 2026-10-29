@@ -11,7 +11,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		<p class="eyebrow">Request a repair</p>
 		<h1>Tell us about your device</h1>
 		<p class="lede">
-			We'll reply with a price and confirm a time. Nothing is booked until we confirm.{" "}
+			We'll reply with a price and confirm a time. Nothing is booked until a tech confirms.{" "}
 			Prefer Facebook? <a href={site.messengerUrl}>Message us on Messenger</a>
 			{
 				site.marketplace && (
@@ -36,7 +36,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 								Email
 								<input type="email" name="email" autocomplete="email" maxlength="200" required />
 							</label>
-							<p class="hint">We'll reply by email. Rather use Messenger? <a href={site.messengerUrl}>Message us there</a> instead.</p>
+							<p class="hint">We'll email you to confirm we got it, and again when a tech takes it. Rather use Messenger? <a href={site.messengerUrl}>Message us there</a> instead.</p>
 						</fieldset>
 					</div>
 
@@ -184,8 +184,8 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		prev.addEventListener("click", () => step(-1));
 		next.addEventListener("click", () => step(1));
 
-		const hint = "Times when a tech is free. We'll hold it for you and confirm.";
-		const describe = (radio: HTMLInputElement) => (radio.value ? `We'll hold ${radio.dataset.label} for you and confirm.` : hint);
+		const hint = "Times when a tech is free. We'll hold it for you until a tech confirms.";
+		const describe = (radio: HTMLInputElement) => (radio.value ? `We'll hold ${radio.dataset.label} for you until a tech confirms.` : hint);
 		field.addEventListener("change", (event) => {
 			const radio = event.target as HTMLInputElement;
 			if (radio.name === "slot") note.textContent = describe(radio);
