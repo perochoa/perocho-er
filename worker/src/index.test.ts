@@ -18,6 +18,7 @@ const env = {
 	SLOT_MINUTES: 60,
 	LEAD_HOURS: 12,
 	DAYS_AHEAD: 14,
+	DEV_ORIGINS: "",
 	TECHS: JSON.stringify([
 		{ name: "Richard", calendarId: "richard@example.com" },
 		{ name: "Sam", calendarId: "sam@example.com" },
@@ -112,6 +113,29 @@ test("lists only times when some tech is free", async () => {
 	assert.ok(starts.includes(iso(slotStart)));
 	assert.ok(!starts.includes(iso(slotStart + hour)));
 	assert.equal(response.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
+});
+
+const slotsFrom = (origin: string, overrides = {}) =>
+	worker.fetch(new Request("https://intake.test/slots", { headers: { Origin: origin } }), {
+		...env,
+		...overrides,
+	});
+
+test("lets the site read the times", async () => {
+	const response = await slotsFrom("https://repairs.perocho.com");
+	assert.equal(response.headers.get("Access-Control-Allow-Origin"), "https://repairs.perocho.com");
+	assert.equal(response.headers.get("Vary"), "Origin");
+});
+
+test("lets other origins read the times only when DEV_ORIGINS lists them", async () => {
+	const local = "http://localhost:4321";
+	const production = await slotsFrom(local);
+	assert.equal(production.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
+
+	const dev = await slotsFrom(local, { DEV_ORIGINS: `http://127.0.0.1:4321, ${local}` });
+	assert.equal(dev.headers.get("Access-Control-Allow-Origin"), local);
+	const other = await slotsFrom("https://evil.example", { DEV_ORIGINS: local });
+	assert.equal(other.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
 });
 
 test("holds the picked time on the free tech's calendar and emails the techs", async () => {
