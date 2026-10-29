@@ -151,104 +151,153 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const dayNote = field.querySelector<HTMLElement>("[data-day-note]")!;
 		const note = form.querySelector<HTMLElement>("[data-slot-note]")!;
 
-		fetch(form.dataset.slots!)
-			.then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-			.then(({ timeZone, slots }: { timeZone: string; slots: { start: string; end: string }[] }) => {
-				if (slots.length === 0) {
-					note.textContent = "No open times online right now. Tell us what works in the notes, and we'll find one.";
-					return;
-				}
-				// Each slot's calendar date in the worker's zone, so the days match the times it offers and holds.
-				const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
-				const dateOf = (start: Date) => {
-					const part = Object.fromEntries(parts.formatToParts(start).map(({ type, value }) => [type, value]));
-					return `${part.year}-${part.month}-${part.day}`;
-				};
-				const time = new Intl.DateTimeFormat("en-CA", { timeZone, hour: "numeric", minute: "2-digit" });
+		// Dates are plain calendar days: noon UTC, so adding days and formatting never shifts them.
+		const noon = (date: string) => new Date(`${date}T12:00:00Z`);
+		const addDays = (date: string, n: number) => new Date(noon(date).getTime() + n * 864e5).toISOString().slice(0, 10);
+		const sundayOf = (date: string) => addDays(date, -noon(date).getUTCDay());
+		const day = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" });
+		const weekday = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", weekday: "short" });
+		const dayOfMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", day: "numeric" });
+		const range = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", month: "short", day: "numeric" });
 
-				// Dates are then plain calendar days: noon UTC, so adding days and formatting never shifts them.
-				const noon = (date: string) => new Date(`${date}T12:00:00Z`);
-				const addDays = (date: string, n: number) => new Date(noon(date).getTime() + n * 864e5).toISOString().slice(0, 10);
-				const sundayOf = (date: string) => addDays(date, -noon(date).getUTCDay());
-				const day = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" });
-				const weekday = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", weekday: "short" });
-				const dayOfMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", day: "numeric" });
-				const range = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", month: "short", day: "numeric" });
+		// Set from each /slots response.
+		let dateOf = (start: Date) => start.toISOString().slice(0, 10);
+		let groups = new Map<string, HTMLElement>();
+		let weeks: string[] = [];
+		let week = 0;
+		let picked = "";
 
-				// Each day's times are a group of radios, shown only while that day is picked.
-				const groups = new Map<string, HTMLElement>();
-				for (const slot of slots) {
-					const start = new Date(slot.start);
-					const date = dateOf(start);
-					let group = groups.get(date);
-					if (!group) {
-						group = Object.assign(document.createElement("div"), { className: "times", hidden: true });
-						group.setAttribute("role", "radiogroup");
-						group.setAttribute("aria-label", day.format(noon(date)));
-						groups.set(date, group);
-						times.append(group);
-					}
-					const radio = Object.assign(document.createElement("input"), { type: "radio", name: "slot", value: slot.start });
-					radio.dataset.label = `${day.format(noon(date))}, ${time.format(start)} to ${time.format(new Date(slot.end))}`;
-					const chip = Object.assign(document.createElement("label"), { className: "chip" });
-					chip.append(radio, time.format(start));
-					group.append(chip);
-				}
+		const none = form.querySelector<HTMLInputElement>("[name=slot][value='']")!;
+		const chosen = () => form.querySelector<HTMLInputElement>("[name=slot]:checked") ?? none;
 
-				// One week of day buttons at a time; the arrows step through the weeks that have times.
-				const weeks = [...new Set([...groups.keys()].map(sundayOf))].sort();
-				let week = 0;
-				let picked = "";
-				const buttons = Array.from({ length: 7 }, () => {
-					const button = Object.assign(document.createElement("button"), { type: "button", className: "day" });
-					button.addEventListener("click", () => {
-						picked = button.dataset.date!;
-						render();
-					});
-					days.append(button);
-					return button;
-				});
-				const render = () => {
-					const sunday = weeks[week];
-					weekLabel.textContent = range.formatRange(noon(sunday), noon(addDays(sunday, 6)));
-					prev.disabled = week === 0;
-					next.disabled = week === weeks.length - 1;
-					buttons.forEach((button, i) => {
-						const date = addDays(sunday, i);
-						button.dataset.date = date;
-						button.disabled = !groups.has(date);
-						button.setAttribute("aria-pressed", String(date === picked));
-						button.setAttribute("aria-label", day.format(noon(date)) + (button.disabled ? ": no techs available" : ""));
-						button.replaceChildren(Object.assign(document.createElement("span"), { textContent: weekday.format(noon(date)) }), dayOfMonth.format(noon(date)));
-					});
-					groups.forEach((group, date) => (group.hidden = date !== picked));
-					dayNote.textContent = [
-						picked ? "" : "Pick a day to see its times.",
-						buttons.some((button) => button.disabled) ? "Greyed-out days have no techs available." : "",
-					].join(" ").trim();
-					dayNote.hidden = !dayNote.textContent;
-				};
-				const step = (by: number) => {
-					week += by;
-					// A picked time stays picked; its day opens again when its week comes back.
-					const slot = form.querySelector<HTMLInputElement>("[name=slot]:checked")!.value;
-					const date = slot && dateOf(new Date(slot));
-					picked = date && sundayOf(date) === weeks[week] ? date : "";
-					render();
-				};
-				prev.addEventListener("click", () => step(-1));
-				next.addEventListener("click", () => step(1));
+		// One week of day buttons at a time; the arrows step through the weeks that have times.
+		const buttons = Array.from({ length: 7 }, () => {
+			const button = Object.assign(document.createElement("button"), { type: "button", className: "day" });
+			button.addEventListener("click", () => {
+				picked = button.dataset.date!;
 				render();
-				field.hidden = false;
+			});
+			days.append(button);
+			return button;
+		});
+		const render = () => {
+			const sunday = weeks[week];
+			weekLabel.textContent = range.formatRange(noon(sunday), noon(addDays(sunday, 6)));
+			prev.disabled = week === 0;
+			next.disabled = week === weeks.length - 1;
+			buttons.forEach((button, i) => {
+				const date = addDays(sunday, i);
+				button.dataset.date = date;
+				button.disabled = !groups.has(date);
+				button.setAttribute("aria-pressed", String(date === picked));
+				button.setAttribute("aria-label", day.format(noon(date)) + (button.disabled ? ": no techs available" : ""));
+				button.replaceChildren(Object.assign(document.createElement("span"), { textContent: weekday.format(noon(date)) }), dayOfMonth.format(noon(date)));
+			});
+			groups.forEach((group, date) => (group.hidden = date !== picked));
+			dayNote.textContent = [
+				picked ? "" : "Pick a day to see its times.",
+				buttons.some((button) => button.disabled) ? "Greyed-out days have no techs available." : "",
+			].join(" ").trim();
+			dayNote.hidden = !dayNote.textContent;
+		};
+		const step = (by: number) => {
+			week += by;
+			// A picked time stays picked; its day opens again when its week comes back.
+			const slot = chosen().value;
+			const date = slot && dateOf(new Date(slot));
+			picked = date && sundayOf(date) === weeks[week] ? date : "";
+			render();
+		};
+		prev.addEventListener("click", () => step(-1));
+		next.addEventListener("click", () => step(1));
 
-				const hint = "Times when a tech is free. We'll hold it for you and confirm.";
-				note.textContent = hint;
-				field.addEventListener("change", (event) => {
-					const picked = event.target as HTMLInputElement;
-					if (picked.name === "slot") note.textContent = picked.value ? `We'll hold ${picked.dataset.label} for you and confirm.` : hint;
-				});
-			})
-			.catch(() => {});
+		const hint = "Times when a tech is free. We'll hold it for you and confirm.";
+		const describe = (radio: HTMLInputElement) => (radio.value ? `We'll hold ${radio.dataset.label} for you and confirm.` : hint);
+		field.addEventListener("change", (event) => {
+			const radio = event.target as HTMLInputElement;
+			if (radio.name === "slot") note.textContent = describe(radio);
+		});
+
+		// Builds the picker from a /slots response. Called again whenever the times change, so it keeps
+		// their pick, the day they had open and the week they were on wherever those still exist.
+		const show = ({ timeZone, slots }: { timeZone: string; slots: { start: string; end: string }[] }) => {
+			const before = chosen().value;
+			const focused = document.activeElement instanceof HTMLInputElement && document.activeElement.name === "slot" ? document.activeElement.value : null;
+			const shownWeek = weeks[week];
+
+			// Each slot's calendar date in the worker's zone, so the days match the times it offers and holds.
+			const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+			dateOf = (start: Date) => {
+				const part = Object.fromEntries(parts.formatToParts(start).map(({ type, value }) => [type, value]));
+				return `${part.year}-${part.month}-${part.day}`;
+			};
+			const time = new Intl.DateTimeFormat("en-CA", { timeZone, hour: "numeric", minute: "2-digit" });
+
+			// Each day's times are a group of radios, shown only while that day is picked.
+			groups = new Map();
+			times.replaceChildren();
+			for (const slot of slots) {
+				const start = new Date(slot.start);
+				const date = dateOf(start);
+				let group = groups.get(date);
+				if (!group) {
+					group = Object.assign(document.createElement("div"), { className: "times", hidden: true });
+					group.setAttribute("role", "radiogroup");
+					group.setAttribute("aria-label", day.format(noon(date)));
+					groups.set(date, group);
+					times.append(group);
+				}
+				const radio = Object.assign(document.createElement("input"), { type: "radio", name: "slot", value: slot.start, checked: slot.start === before });
+				radio.dataset.label = `${day.format(noon(date))}, ${time.format(start)} to ${time.format(new Date(slot.end))}`;
+				const chip = Object.assign(document.createElement("label"), { className: "chip" });
+				chip.append(radio, time.format(start));
+				group.append(chip);
+			}
+
+			const lost = before !== "" && chosen() === none;
+			none.checked = chosen() === none;
+			if (focused !== null) form.querySelector<HTMLInputElement>(`[name=slot][value="${focused}"]`)?.focus();
+
+			if (slots.length === 0) {
+				field.hidden = true;
+				note.textContent = `${lost ? "The time you picked was just taken. " : ""}No open times online right now. Tell us what works in the notes, and we'll find one.`;
+				return;
+			}
+			weeks = [...new Set([...groups.keys()].map(sundayOf))].sort();
+			week = Math.max(0, weeks.indexOf(shownWeek));
+			if (!groups.has(picked) || sundayOf(picked) !== weeks[week]) picked = "";
+			render();
+			field.hidden = false;
+			note.textContent = lost ? "The time you picked was just taken. Pick another, or leave it to us." : describe(chosen());
+		};
+
+		// Techs change their calendars while people fill in the form, so fetch again every so often
+		// while the page is in view, and as soon as they come back to it. The picker is only rebuilt
+		// when the times differ, so a refresh doesn't disturb someone using it.
+		const REFRESH_MS = 60_000;
+		let last = "";
+		let fetchedAt = 0;
+		let loading = false;
+		const load = () => {
+			if (loading) return;
+			loading = true;
+			fetchedAt = Date.now();
+			fetch(form.dataset.slots!)
+				.then((response) => (response.ok ? response.text() : Promise.reject(response.status)))
+				.then((body) => {
+					if (body === last) return;
+					last = body;
+					show(JSON.parse(body));
+				})
+				// Keep whatever is showing; the next refresh tries again.
+				.catch(() => {})
+				.finally(() => (loading = false));
+		};
+		load();
+		setInterval(() => document.visibilityState === "visible" && load(), REFRESH_MS);
+		document.addEventListener("visibilitychange", () => {
+			if (document.visibilityState === "visible" && Date.now() - fetchedAt > REFRESH_MS / 4) load();
+		});
 	}
 </script>
 
