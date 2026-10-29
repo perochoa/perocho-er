@@ -25,73 +25,79 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		{
 			site.intakeUrl ? (
 				<form method="post" action={`${site.intakeUrl}/request`} data-slots={`${site.intakeUrl}/slots`}>
-					<fieldset>
-						<legend>You</legend>
-						<label>
-							Name
-							<input name="name" autocomplete="name" maxlength="100" required />
-						</label>
-						<div class="choice" role="radiogroup" aria-labelledby="contact-label">
-							<span id="contact-label">How should we reach you?</span>
-							<label><input type="radio" name="contact" value="email" checked required /> Email</label>
-							<label><input type="radio" name="contact" value="text" /> Text</label>
-							<label><input type="radio" name="contact" value="messenger" /> Messenger</label>
-						</div>
-						<div class="row">
-							<label data-contact="email">
-								Email
-								<input type="email" name="email" autocomplete="email" maxlength="200" />
+					<div class="card">
+						<fieldset>
+							<legend>You</legend>
+							<label>
+								Name
+								<input name="name" autocomplete="name" maxlength="100" required />
 							</label>
-							<label data-contact="text">
-								Phone
-								<input type="tel" name="phone" autocomplete="tel" maxlength="40" />
-							</label>
-							<label data-contact="messenger">
-								Facebook name
-								<input name="facebook" maxlength="100" />
-							</label>
-						</div>
-						<p class="hint">Fill in the one you picked; the others are optional.</p>
-					</fieldset>
+							<div class="choice" role="radiogroup" aria-labelledby="contact-label">
+								<span id="contact-label">How should we reach you?</span>
+								<label><input type="radio" name="contact" value="email" checked required /> Email</label>
+								<label><input type="radio" name="contact" value="text" /> Text</label>
+								<label><input type="radio" name="contact" value="messenger" /> Messenger</label>
+							</div>
+							<div class="row">
+								<label data-contact="email">
+									Email
+									<input type="email" name="email" autocomplete="email" maxlength="200" />
+								</label>
+								<label data-contact="text">
+									Phone
+									<input type="tel" name="phone" autocomplete="tel" maxlength="40" />
+								</label>
+								<label data-contact="messenger">
+									Facebook name
+									<input name="facebook" maxlength="100" />
+								</label>
+							</div>
+							<p class="hint">Fill in the one you picked; the others are optional.</p>
+						</fieldset>
+					</div>
 
-					<fieldset>
-						<legend>The repair</legend>
-						<label>
-							Service
-							<select name="service">
-								{services.map((service) => <option>{service.data.title}</option>)}
-								<option value="">Something else, or not sure</option>
-							</select>
-						</label>
-						<label>
-							Device and model
-							<input name="device" maxlength="150" placeholder="e.g. DualSense controller, PS5 Slim" required />
-						</label>
-						<label>
-							What's wrong?
-							<textarea name="problem" rows="4" maxlength="2000" required></textarea>
-						</label>
-						<div class="choice" role="radiogroup" aria-labelledby="visit-label">
-							<span id="visit-label">Drop off or house call?</span>
-							<label><input type="radio" name="visit" value="drop-off" checked required /> Drop off</label>
-							<label><input type="radio" name="visit" value="house-call" /> We come to you</label>
-						</div>
-					</fieldset>
+					<div class="card">
+						<fieldset>
+							<legend>The repair</legend>
+							<label>
+								Service
+								<select name="service">
+									{services.map((service) => <option>{service.data.title}</option>)}
+									<option value="">Something else, or not sure</option>
+								</select>
+							</label>
+							<label>
+								Device and model
+								<input name="device" maxlength="150" placeholder="e.g. DualSense controller, PS5 Slim" required />
+							</label>
+							<label>
+								What's wrong?
+								<textarea name="problem" rows="4" maxlength="2000" required></textarea>
+							</label>
+							<div class="choice" role="radiogroup" aria-labelledby="visit-label">
+								<span id="visit-label">Drop off or house call?</span>
+								<label><input type="radio" name="visit" value="drop-off" checked required /> Drop off</label>
+								<label><input type="radio" name="visit" value="house-call" /> We come to you</label>
+							</div>
+						</fieldset>
+					</div>
 
-					<fieldset>
-						<legend>When</legend>
-						<label data-slot-field hidden>
-							Pick a time
-							<select name="slot">
-								<option value="">No time yet: find one with us</option>
-							</select>
-						</label>
-						<p class="hint" data-slot-note>Tell us what times work in the notes, and we'll confirm one.</p>
-						<label>
-							<span>Anything else? <span class="optional">(optional)</span></span>
-							<textarea name="notes" rows="3" maxlength="2000"></textarea>
-						</label>
-					</fieldset>
+					<div class="card">
+						<fieldset>
+							<legend>When</legend>
+							<label data-slot-field hidden>
+								Pick a time
+								<select name="slot">
+									<option value="">No time yet: find one with us</option>
+								</select>
+							</label>
+							<p class="hint" data-slot-note>Tell us what times work in the notes, and we'll confirm one.</p>
+							<label>
+								<span>Anything else? <span class="optional">(optional)</span></span>
+								<textarea name="notes" rows="3" maxlength="2000"></textarea>
+							</label>
+						</fieldset>
+					</div>
 
 					<!-- Hidden from people; bots fill it in. -->
 					<div class="trap" aria-hidden="true">
@@ -173,23 +179,26 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		display: grid;
 		gap: 1.25rem;
 	}
-	fieldset {
-		display: grid;
-		gap: 1rem;
-		margin: 0;
+	/* The card is a wrapper, not the fieldset: Safari draws a fieldset's legend on its border. */
+	.card {
 		padding: 1.5rem;
 		background: var(--surface);
 		border: 1px solid var(--line);
 		border-radius: 0.75rem;
 	}
-	legend {
+	fieldset {
+		display: grid;
+		gap: 1rem;
+		min-width: 0;
+		margin: 0;
 		padding: 0;
-		float: left;
+		border: 0;
+	}
+	legend {
+		margin-bottom: 1rem;
+		padding: 0;
 		font-size: 1.125rem;
 		font-weight: 700;
-	}
-	legend + * {
-		clear: left;
 	}
 	label,
 	.choice > span {
