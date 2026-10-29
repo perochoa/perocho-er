@@ -581,6 +581,16 @@ test("answers an unknown link with 404", async () => {
 	assert.equal(response.status, 404);
 });
 
+test("a post to a link that isn't a form changes nothing", async () => {
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+	for (const init of [{}, { body: "{}", headers: { "Content-Type": "application/json" } }]) {
+		const response = await worker.fetch(new Request(sam, { method: "POST", ...init }), env);
+		assert.equal(response.status, 303);
+	}
+	assert.equal(status(), "pending");
+});
+
 test("the first tech to take it books it and everyone hears", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });

@@ -277,7 +277,9 @@ export default {
 			const offer = pathname.match(OFFER);
 			if (offer && req.method === "GET") return await page(env, offer[1]);
 			if (offer && req.method === "POST") {
-				await act(env, offer[1], String((await req.formData()).get("action") ?? ""));
+				// A body that isn't a form is a press of no button.
+				const form = await req.formData().catch(() => null);
+				await act(env, offer[1], String(form?.get("action") ?? ""));
 				// Back to the page, which now shows where the request stands.
 				return Response.redirect(req.url, 303);
 			}
