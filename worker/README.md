@@ -9,17 +9,17 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
 
 ## For the techs
 
-- **Mark when you're free:** add an event titled `Available` (anything after it is fine, e.g.
-  `Available - evenings`) to your calendar. Repeating events work.
-- **Your other events block times automatically.** All-day events, events set to "Free" and
-  invites you declined don't.
+- **You're bookable 9:00 to 17:00 every day, weekends included,** wherever your calendar has
+  no event (`WORK_HOURS` in `wrangler.jsonc`). Keep your calendar up to date, and add an event
+  for any time off.
+- **Your events block times automatically.** All-day events, events set to "Free" and invites
+  you declined don't.
 - **A request shows up as a yellow, tentative `Request: ...` event** with the details in its
   description, and an email arrives at `contact@perocho.com`. Reply to the email to reach the
   customer.
   - Confirm it: rename the event (e.g. `Booked: ...`). It keeps the time blocked.
   - Decline or move it: delete the event (that frees the time), then contact the customer.
-- Times are offered between 12 hours and 14 days ahead, in 60-minute slots that start at the
-  beginning of your `Available` block (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in
+- Times are offered between 12 hours and 14 days ahead, in 60-minute slots on the hour (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in
   `wrangler.jsonc`).
 
 ## Setup

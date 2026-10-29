@@ -14,6 +14,7 @@ const env = {
 	MAIL_FROM: "contact@perocho.com",
 	MAIL_TO: "contact@perocho.com",
 	TIME_ZONE: "America/Toronto",
+	WORK_HOURS: "00:00-24:00", // every hour, so the tests don't depend on the time of day
 	SLOT_MINUTES: "60",
 	LEAD_HOURS: "12",
 	DAYS_AHEAD: "14",
@@ -34,14 +35,13 @@ let holds: { calendarId: string; body: any }[];
 let mails: any[];
 
 beforeEach(() => {
-	// Richard is busy at the slot; Sam is free.
+	// Richard is busy at the slot; Sam is free. Both are busy the hour after.
 	calendars = {
 		"richard@example.com": [
-			{ summary: "Available", start: { dateTime: iso(slotStart) }, end: { dateTime: iso(slotStart + 2 * hour) } },
-			{ summary: "Dentist", start: { dateTime: iso(slotStart) }, end: { dateTime: iso(slotStart + hour) } },
+			{ summary: "Dentist", start: { dateTime: iso(slotStart) }, end: { dateTime: iso(slotStart + 2 * hour) } },
 		],
 		"sam@example.com": [
-			{ summary: "Available", start: { dateTime: iso(slotStart) }, end: { dateTime: iso(slotStart + hour) } },
+			{ summary: "Gym", start: { dateTime: iso(slotStart + hour) }, end: { dateTime: iso(slotStart + 2 * hour) } },
 		],
 	};
 	holds = [];
@@ -108,10 +108,9 @@ const submit = (fields: Record<string, string>) => {
 test("lists only times when some tech is free", async () => {
 	const response = await worker.fetch(new Request("https://intake.test/slots"), env);
 	const { slots } = (await response.json()) as { slots: { start: string }[] };
-	assert.deepEqual(
-		slots.map((s) => s.start),
-		[iso(slotStart), iso(slotStart + hour)],
-	);
+	const starts = slots.map((s) => s.start);
+	assert.ok(starts.includes(iso(slotStart)));
+	assert.ok(!starts.includes(iso(slotStart + hour)));
 	assert.equal(response.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
 });
 

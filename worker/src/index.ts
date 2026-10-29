@@ -6,13 +6,14 @@
 import { sendMail } from "./fastmail.ts";
 import { accessToken, createHold, listEvents } from "./google.ts";
 import { describe, formatTime, parseIntake, replyTo, subject } from "./intake.ts";
-import { openSlots } from "./slots.ts";
+import { openSlots, parseWorkHours } from "./slots.ts";
 
 interface Env {
 	SITE_URL: string;
 	MAIL_FROM: string;
 	MAIL_TO: string;
 	TIME_ZONE: string;
+	WORK_HOURS: string; // "09:00-17:00", every day
 	SLOT_MINUTES: string;
 	LEAD_HOURS: string;
 	DAYS_AHEAD: string;
@@ -34,6 +35,8 @@ async function findSlots(env: Env, token: string) {
 		slotMinutes: Number(env.SLOT_MINUTES),
 		leadHours: Number(env.LEAD_HOURS),
 		daysAhead: Number(env.DAYS_AHEAD),
+		workHours: parseWorkHours(env.WORK_HOURS),
+		timeZone: env.TIME_ZONE,
 	};
 	const to = options.now + options.daysAhead * 86_400_000;
 	const events = await Promise.all(
