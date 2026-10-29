@@ -4,7 +4,6 @@
 // All-day events, events marked "Show as free" and invites they declined don't block anything.
 
 export interface CalendarEvent {
-	summary: string;
 	start: number; // epoch ms
 	end: number;
 	allDay: boolean;
