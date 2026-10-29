@@ -30,11 +30,15 @@ export const toTech = (intake: Intake, time: string | null, tech: Offered): Mess
 	].join("\n"),
 });
 
+// Google shows an event's description as HTML, so a customer could hide a link of their own
+// behind text like "Take it". Lookalike brackets keep what they wrote readable without any tags.
+const untagged = (text: string) => text.replaceAll("<", "‹").replaceAll(">", "›");
+
 export const holdDescription = (intake: Intake, time: string, link: string) =>
-	`${describe(intake, time)}\n\nTake it or decline it: ${link}`;
+	`${untagged(describe(intake, time))}\n\nTake it or decline it: ${link}`;
 
 export const bookedDescription = (intake: Intake, time: string, tech: string) =>
-	`${describe(intake, time)}\n\nTaken by ${tech}. Delete this event to cancel, and let them know.`;
+	`${untagged(describe(intake, time))}\n\nTaken by ${tech}. Delete this event to cancel, and let them know.`;
 
 export const holdSummary = (intake: Intake) => `Request: ${what(intake)} (${intake.name})`;
 export const bookedSummary = (intake: Intake) => `Repair: ${what(intake)} (${intake.name})`;

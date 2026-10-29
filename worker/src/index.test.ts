@@ -569,6 +569,13 @@ test("escapes what the customer wrote on the page", async () => {
 	assert.match(body, /&lt;script&gt;/);
 });
 
+test("keeps tags out of what the customer wrote on the calendar", async () => {
+	await submit({ slot: iso(slotStart), problem: '<a href="https://evil.example">Take it</a>' });
+	const { description } = holds[0].body;
+	assert.ok(!description.includes("<a"));
+	assert.match(description, /‹a href="https:\/\/evil\.example"›Take it‹\/a›/);
+});
+
 test("answers an unknown link with 404", async () => {
 	const response = await offerPage("https://intake.test/offers/00000000-0000-4000-8000-000000000000");
 	assert.equal(response.status, 404);
