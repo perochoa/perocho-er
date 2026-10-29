@@ -31,7 +31,7 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-const blocks = (event: CalendarEvent) => !event.allDay && !event.transparent && !event.declined;
+export const blocks = (event: CalendarEvent) => !event.allDay && !event.transparent && !event.declined;
 
 // Parses "09:00-17:00" into minutes after midnight.
 export function parseWorkHours(hours: string): { start: number; end: number } {

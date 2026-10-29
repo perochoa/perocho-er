@@ -34,9 +34,13 @@ const env = {
 const iso = (ms: number) => new Date(ms).toISOString();
 let calendars: Record<string, object[]>;
 let holds: { calendarId: string; body: any }[];
+let deleted: { calendarId: string; eventId: string }[];
 let mails: any[];
 let tokenRequests: number;
 let tokenLifetime: number; // seconds, as Google's expires_in
+// Another request's hold that lands on the same calendar right after ours is written, unseen by
+// our first look at the calendar: the race the re-check is for.
+let rival: ((ours: { id: string; created: string }) => object) | null;
 
 beforeEach(() => {
 	// Richard is busy at the slot; Sam is free. Both are busy the hour after.
@@ -49,10 +53,12 @@ beforeEach(() => {
 		],
 	};
 	holds = [];
+	deleted = [];
 	mails = [];
 	tokenRequests = 0;
 	tokenLifetime = 3600;
 	resetTokenCache();
+	rival = null;
 
 	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = new URL(String(input));
@@ -61,12 +67,22 @@ beforeEach(() => {
 			tokenRequests++;
 			return Response.json({ access_token: "google-token", expires_in: tokenLifetime });
 		}
+		const event = url.pathname.match(/\/calendars\/([^/]+)\/events\/([^/]+)$/);
+		if (event && init?.method === "DELETE") {
+			const [calendarId, eventId] = [event[1], event[2]].map(decodeURIComponent);
+			deleted.push({ calendarId, eventId });
+			calendars[calendarId] = calendars[calendarId].filter((e: any) => e.id !== eventId);
+			return new Response(null, { status: 204 });
+		}
 		const calendar = url.pathname.match(/\/calendars\/([^/]+)\/events$/);
 		if (calendar) {
 			const calendarId = decodeURIComponent(calendar[1]);
 			if (init?.method === "POST") {
 				holds.push({ calendarId, body });
-				return Response.json({});
+				const ours = { id: `hold${holds.length}`, created: new Date().toISOString() };
+				calendars[calendarId].push({ ...body, ...ours });
+				if (rival) calendars[calendarId].push(rival(ours));
+				return Response.json(ours);
 			}
 			return Response.json({ items: calendars[calendarId] });
 		}
@@ -176,6 +192,42 @@ test("sends people back when the time was just taken", async () => {
 	const response = await submit({ slot: iso(slotStart) });
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/taken/");
 	assert.equal(holds.length + mails.length, 0);
+});
+
+const racingHold = (id: string, created: number) => ({
+	id,
+	created: iso(created),
+	summary: "Request: TMR sticks (Alex)",
+	start: { dateTime: iso(slotStart) },
+	end: { dateTime: iso(slotStart + hour) },
+});
+
+test("gives up its hold when a racing request held the slot first", async () => {
+	rival = (ours) => racingHold("rival", Date.parse(ours.created) - 1000);
+	const response = await submit({ slot: iso(slotStart) });
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/taken/");
+	assert.deepEqual(deleted, [{ calendarId: "sam@example.com", eventId: "hold1" }]);
+	assert.deepEqual(calendars["sam@example.com"].map((e: any) => e.id).filter(Boolean), ["rival"]);
+	assert.equal(mails.length, 0);
+});
+
+test("keeps its hold when it beat a racing request", async () => {
+	rival = (ours) => racingHold("rival", Date.parse(ours.created) + 1000);
+	const response = await submit({ slot: iso(slotStart) });
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.equal(deleted.length, 0);
+	assert.equal(mails.length, 1);
+});
+
+test("breaks a tie between racing holds by id, so both sides agree", async () => {
+	rival = (ours) => racingHold("a-rival", Date.parse(ours.created)); // "a-rival" < "hold1"
+	const lost = await submit({ slot: iso(slotStart) });
+	assert.equal(lost.headers.get("Location"), "https://repairs.perocho.com/request/taken/");
+
+	calendars["sam@example.com"] = calendars["sam@example.com"].filter((e: any) => e.id !== "a-rival");
+	rival = (ours) => racingHold("z-rival", Date.parse(ours.created)); // "z-rival" > "hold2"
+	const won = await submit({ slot: iso(slotStart) });
+	assert.equal(won.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
 });
 
 test("drops honeypot submissions quietly", async () => {
