@@ -9,8 +9,16 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Hold TypeScript majors until @astrojs/check supports them; both packages move together.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
 
   - package-ecosystem: npm
     directory: /worker
     schedule:
       interval: weekly
+    # Hold TypeScript majors until @astrojs/check supports them; both packages move together.
+    ignore:
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
