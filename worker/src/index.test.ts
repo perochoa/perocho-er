@@ -623,6 +623,28 @@ test("nobody can take it once the time has started", async () => {
 	assert.ok(!body.includes("<form"));
 });
 
+test("a tech can't take two repairs at the same time", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await press(linkFor("sam@example.com"), "confirm");
+
+	// Richard's hold went, so he's free for Bob's request at the same time; Sam has Jane's repair.
+	mails = [];
+	await submit({ slot: iso(slotStart), name: "Bob", email: "bob@example.com" });
+	const bob = () => db.sqlite.prepare("SELECT status FROM requests WHERE intake LIKE '%Bob%'").get() as any;
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	mails = [];
+	await press(sam, "confirm");
+	assert.equal(bob().status, "pending");
+	assert.equal(mails.length, 0);
+	const body = await (await offerPage(sam)).text();
+	assert.match(body, /You already have a repair then/);
+	assert.ok(!body.includes('value="confirm">'));
+
+	await press(richard, "confirm");
+	assert.equal(bob().status, "confirmed");
+});
+
 // Google answers every `method` request with a 403, until the returned function is called.
 const failing = (method: string) => {
 	const original = globalThis.fetch;
@@ -677,7 +699,7 @@ test("expires a request nobody took once its time starts, and lets the holds go"
 	assert.match(to("contact@perocho.com")[0].subject, /^Nobody took/);
 	assert.deepEqual(deleted.map((d) => d.calendarId).sort(), ["richard@example.com", "sam@example.com"]);
 	assert.deepEqual(holdIds(), [null, null]);
-	assert.match(await (await offerPage(sam)).text(), /This time has passed/);
+	assert.match(await (await offerPage(sam)).text(), /This request expired/);
 
 	// Done once.
 	mails = [];

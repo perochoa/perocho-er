@@ -24,7 +24,8 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   - **Take it:** the first tech to press it gets the request. Your hold turns into a green
     `Repair: ...` booking (or one is created if you didn't have a hold), everyone else's hold
     is deleted, and the customer and the other techs are emailed. Anyone who presses it after
-    you sees that you took it.
+    you sees that you took it. You can take a request when you're busy (and move what was
+    there), but not one at the same time as a repair you've already taken.
   - **Decline:** takes only you out; your hold is deleted and the others can still take it. You
     can change your mind and take it while it's open. Once every tech has declined, the customer
     is told nobody can take it.

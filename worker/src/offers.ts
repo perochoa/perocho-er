@@ -56,13 +56,26 @@ const send = async (env: Env, mails: Omit<Mail, "from">[]) => {
 // Once the time has started nobody can take it; the scheduled job expires it.
 const passed = (request: RequestRow, now = Date.now()) => request.slot_start !== null && request.slot_start <= now;
 
+// Another repair the tech has taken at the same time. Their other events don't count: a tech
+// who was busy can still take a request and move what was there.
+const CLASH = `SELECT 1 FROM requests other JOIN offers mine ON mine.token = other.confirmed_by
+	WHERE other.status = 'confirmed' AND other.id != ?1 AND mine.calendar_id = ?2
+	AND other.slot_start < ?3 AND other.slot_end > ?4`;
+
+const clashes = async (db: D1Database, offer: OfferRow, request: RequestRow) =>
+	request.slot_start !== null &&
+	(await db.prepare(CLASH).bind(request.id, offer.calendar_id, request.slot_end, request.slot_start).first()) !== null;
+
 // First tech to get here takes it. A tech who declined can still change their mind while it's open.
 async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
+	// The clash is checked in the same statement, so the same tech taking two requests at once
+	// can't win both.
 	const won = await env.DB.prepare(
-		`UPDATE requests SET status = 'confirmed', confirmed_by = ?1
-		 WHERE id = ?2 AND status = 'pending' AND (slot_start IS NULL OR slot_start > ?3)`,
+		`UPDATE requests SET status = 'confirmed', confirmed_by = ?5
+		 WHERE id = ?1 AND status = 'pending'
+		 AND (slot_start IS NULL OR (slot_start > ?6 AND NOT EXISTS (${CLASH})))`,
 	)
-		.bind(offer.token, request.id, Date.now())
+		.bind(request.id, offer.calendar_id, request.slot_end, request.slot_start, offer.token, Date.now())
 		.run();
 	if (won.meta.changes !== 1) return;
 	await env.DB.prepare("UPDATE offers SET declined = 0 WHERE token = ?").bind(offer.token).run();
@@ -226,6 +239,7 @@ export async function page(env: Env, token: string): Promise<Response> {
 	const taker = offers.find((other) => other.token === request.confirmed_by);
 
 	const take = '<button name="action" value="confirm">Take it</button>';
+	const decline = offer.declined ? "" : '<button name="action" value="decline">Decline</button>';
 	const [title, state, buttons] =
 		request.status === "confirmed"
 			? taker?.token === offer.token
@@ -233,15 +247,19 @@ export async function page(env: Env, token: string): Promise<Response> {
 				: [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""]
 			: request.status === "declined"
 				? ["Every tech declined this request", "The customer has been told.", ""]
-				: request.status === "expired" || passed(request)
-					? ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""]
-					: offer.declined
-						? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
-						: [
-								"New repair request",
-								time ? `For ${stop(time)} The first tech to take it gets it.` : "No time picked. The first tech to take it gets it.",
-								`${take}<button name="action" value="decline">Decline</button>`,
-							];
+				: request.status === "expired"
+					? ["This request expired", "Nobody took it in time, and the customer has been told.", ""]
+					: passed(request)
+						? ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""]
+						: await clashes(env.DB, offer, request)
+							? ["You already have a repair then", "You took another request at this time, so you can't take this one too.", decline]
+							: offer.declined
+								? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
+								: [
+										"New repair request",
+										time ? `For ${stop(time)} The first tech to take it gets it.` : "No time picked. The first tech to take it gets it.",
+										take + decline,
+									];
 
 	return html(
 		title,
