@@ -31,7 +31,7 @@
 		"MAIL_TO": "contact@perocho.com",
 		"TIME_ZONE": "America/Toronto",
 		"SLOT_MINUTES": 60,
-		"LEAD_HOURS": 12,
+		"LEAD_HOURS": 2,
 		"DAYS_AHEAD": 14,
 		// Comma-separated origins also allowed to read /slots, besides SITE_URL. Leave empty here;
 		// set it in .dev.vars for local work, e.g. DEV_ORIGINS=http://localhost:4321

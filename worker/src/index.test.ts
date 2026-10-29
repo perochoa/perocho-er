@@ -18,7 +18,7 @@ const env = {
 	MAIL_TO: "contact@perocho.com",
 	TIME_ZONE: "America/Toronto",
 	SLOT_MINUTES: 60,
-	LEAD_HOURS: 12,
+	LEAD_HOURS: 2,
 	DAYS_AHEAD: 14,
 	DEV_ORIGINS: "",
 	TECHS: JSON.stringify([
