@@ -86,12 +86,14 @@ export function openSlots(eventsByTech: CalendarEvent[][], options: SlotOptions)
 				if (start < earliest || end > latest) continue;
 				if (busy.some((event) => event.start < end && event.end > start)) continue;
 				const slot = slots.get(start) ?? { start, end, techs: [] };
+				// Techs go in index order, so pushing keeps `techs` ascending. The check is still
+				// needed: hours past midnight (e.g. "09:00-34:00") overlap the next day's, and
+				// then a tech reaches the same start twice.
 				if (!slot.techs.includes(tech)) slot.techs.push(tech);
 				slots.set(start, slot);
 			}
 		}
 	});
 
-	for (const slot of slots.values()) slot.techs.sort((a, b) => a - b);
 	return [...slots.values()].sort((a, b) => a.start - b.start);
 }
