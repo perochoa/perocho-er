@@ -93,6 +93,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 									<button class="step" type="button" data-next aria-label="Next week">›</button>
 								</div>
 								<div class="days" data-days></div>
+								<p class="hint" data-day-note></p>
 								<div data-times></div>
 								<div class="choice">
 									<label><input type="radio" name="slot" value="" checked /> No time yet: find one with us</label>
@@ -147,6 +148,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const weekLabel = field.querySelector<HTMLElement>("[data-week-label]")!;
 		const prev = field.querySelector<HTMLButtonElement>("[data-prev]")!;
 		const next = field.querySelector<HTMLButtonElement>("[data-next]")!;
+		const dayNote = field.querySelector<HTMLElement>("[data-day-note]")!;
 		const note = form.querySelector<HTMLElement>("[data-slot-note]")!;
 
 		fetch(form.dataset.slots!)
@@ -216,10 +218,15 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 						button.dataset.date = date;
 						button.disabled = !groups.has(date);
 						button.setAttribute("aria-pressed", String(date === picked));
-						button.setAttribute("aria-label", day.format(noon(date)));
+						button.setAttribute("aria-label", day.format(noon(date)) + (button.disabled ? ": no techs available" : ""));
 						button.replaceChildren(Object.assign(document.createElement("span"), { textContent: weekday.format(noon(date)) }), dayOfMonth.format(noon(date)));
 					});
 					groups.forEach((group, date) => (group.hidden = date !== picked));
+					dayNote.textContent = [
+						picked ? "" : "Pick a day to see its times.",
+						buttons.some((button) => button.disabled) ? "Greyed-out days have no techs available." : "",
+					].join(" ").trim();
+					dayNote.hidden = !dayNote.textContent;
 				};
 				const step = (by: number) => {
 					week += by;
