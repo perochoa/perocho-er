@@ -1,9 +1,10 @@
 # Intake worker
 
 A Cloudflare Worker behind the site's repair request form (`/request/`). It reads each tech's
-Google Calendar to offer open times, holds the picked time as a tentative event on a free tech's
-calendar, and emails the request to `contact@perocho.com` with the customer as Reply-To. People
-without JS can still send the form; they just don't get the time list.
+Google Calendar to offer open times, and offers each request to every tech by email, with a
+tentative hold on the calendar of every tech free at the picked time. The first tech to take it
+gets it, and the customer is emailed at each step. People without JS can still send the form;
+they just don't get the time list.
 
 Messenger, email and Facebook Marketplace stay as they are. The form is one more way in.
 
@@ -15,12 +16,24 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   count. Delete or shorten a block to stop offering that time.
 - **Your other events still block times inside a block.** All-day events, events set to "Free"
   and invites you declined don't.
-- **A request shows up as a yellow, tentative `Request: ...` event** with the details in its
-  description, and an email arrives at `contact@perocho.com`. Reply to the email to reach the
-  customer. If the email fails to send, the customer is still told the request went through,
-  so check the calendar too: the event has everything the email would have.
-  - Confirm it: rename the event (e.g. `Booked: ...`). It keeps the time blocked.
-  - Decline or move it: delete the event (that frees the time), then contact the customer.
+- **Every request is emailed to every tech**, each with their own link, and a copy without
+  links goes to `contact@perocho.com`. If you're free at the picked time it's also on your
+  calendar as a yellow, tentative `Request: ...` event, with the details and your link in its
+  description. Reply to the email to reach the customer.
+- **Open your link to take it or decline it.** Opening it changes nothing; the buttons do.
+  - **Take it:** the first tech to press it gets the request. Your hold turns into a green
+    `Repair: ...` booking (or one is created if you didn't have a hold), everyone else's hold
+    is deleted, and the customer and the other techs are emailed. Anyone who presses it after
+    you sees that you took it.
+  - **Decline:** takes only you out; your hold is deleted and the others can still take it. You
+    can change your mind and take it while it's open. Once every tech has declined, the customer
+    is told nobody can take it.
+  - Requests nobody acts on stay open; nothing expires them yet.
+- **To cancel or move a booking**, change or delete the event and email the customer yourself.
+- **The customer gets an email** when the request comes in, when a tech takes it, when every
+  tech declines, and if it failed to go through.
+- If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
+  the calendar too: the hold has everything the email would have, including your link.
 - Times are offered between 12 hours and 14 days ahead, in 60-minute slots on the hour (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in
   `wrangler.jsonc`).
 
@@ -46,21 +59,25 @@ All free tiers. Do these once.
    npx wrangler secret put GOOGLE_SERVICE_ACCOUNT   # paste the JSON key
    npx wrangler secret put FASTMAIL_TOKEN
    npx wrangler secret put TECHS                    # see below
+   npx wrangler d1 create perocho-intake            # put the database_id it prints in wrangler.jsonc
+   npx wrangler d1 migrations apply DB --remote
    npx wrangler deploy
    ```
 
-   `TECHS` lists the techs in the order they get requests when more than one is free. The
-   calendar ID is the Gmail address for a main calendar, or the "Calendar ID" from the
-   calendar's settings. It's a secret so the addresses stay out of this public repo.
+   `TECHS` lists the techs; emails list them in this order. The calendar ID is the Gmail
+   address for a main calendar, or the "Calendar ID" from the calendar's settings. `email` is
+   where their requests go, and defaults to the calendar ID. It's a secret so the addresses stay
+   out of this public repo.
 
    ```json
-   [{ "name": "Richard", "calendarId": "richard@gmail.com" }]
+   [{ "name": "Richard", "calendarId": "richard@gmail.com", "email": "richard@example.com" }]
    ```
 
 5. **Turn the form on:** set `intakeUrl` in `src/site.ts` to the URL `wrangler deploy` printed
    (no trailing slash) and merge that change. Until then the site hides every link to the form.
 6. **Let CI deploy.** Create a Cloudflare API token (My Profile → API Tokens → Create Token →
-   the "Edit Cloudflare Workers" template), limited to the one account and its zones. Add it in
+   the "Edit Cloudflare Workers" template, plus Account → D1 → Edit for the migrations),
+   limited to the one account and its zones. Add it in
    GitHub → the repo's Settings → Secrets and variables → Actions as `CLOUDFLARE_API_TOKEN`.
    Wrangler finds the account from the token, so no account ID is needed while the token covers
    only one account.
@@ -68,7 +85,7 @@ All free tiers. Do these once.
 ## Deploys
 
 Merging to `main` deploys the worker from CI when anything under `worker/` changed
-(`.github/workflows/deploy.yml`). Running the workflow by hand (Actions > Deploy to GitHub Pages >
+(`.github/workflows/deploy.yml`), applying any new `migrations/` to the database first. Running the workflow by hand (Actions > Deploy to GitHub Pages >
 Run workflow) always deploys the worker, then the site. The job runs the types check, typecheck
 and tests first, and the site deploys only after it, so a site change that needs a new worker
 response never goes out first. When nothing under `worker/` changed, the worker job is skipped
@@ -82,7 +99,8 @@ they're set).
 ## Development
 
 ```sh
-npm test        # slot logic, form parsing, and the handler with Google and Fastmail faked
+npm test        # slot logic, form parsing, and the handler with Google and Fastmail faked and
+                # D1 on an in-memory SQLite with the real migrations
 npm run check   # typecheck the worker (no Node types) and the tests (tsconfig.test.json)
 npm run types   # regenerate worker-configuration.d.ts after changing wrangler.jsonc
 ```
@@ -99,7 +117,12 @@ with the secrets:
 DEV_ORIGINS=http://localhost:4321
 ```
 
-Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed.
+`npx wrangler dev` uses a local database; create its tables with
+`npx wrangler d1 migrations apply DB --local`. Schema changes are new numbered files in
+`migrations/`; never edit one that's been applied.
+
+Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
+already sent keep going to the techs they were sent to.
 
 ## Spam
 
@@ -108,7 +131,8 @@ Two defences, neither needing JS:
 - **Honeypot.** A hidden `website` field people never see. A post that fills it gets the "sent"
   page and nothing else happens.
 - **Rate limit.** Each visitor IP (`CF-Connecting-IP`) gets **3 valid posts a minute**; past that
-  they land on the "didn't go through" page and nothing is held or emailed. Honeypot and invalid
+  they land on the "didn't go through" page and nothing is held or emailed, not even to the
+  address they gave, so the form can't be used to flood someone's inbox. Honeypot and invalid
   posts don't count, since they cost nothing. Three covers a first try plus a couple of retries
   after "that time was just taken"; a real person doesn't send more than that in a minute.
 
