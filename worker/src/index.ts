@@ -55,7 +55,10 @@ async function slots(env: Env, origin: string | null): Promise<Response> {
 const before = (event: ListedEvent, hold: { id: string; created: number }) =>
 	event.created < hold.created || (event.created === hold.created && event.id < hold.id);
 
-async function request(env: Env, form: FormData, ip: string | null): Promise<string> {
+// Each outcome is a page in src/pages/request/[outcome].astro, so add or remove them together.
+type Outcome = "sent" | "taken" | "failed";
+
+async function request(env: Env, form: FormData, ip: string | null): Promise<Outcome> {
 	const parsed = parseIntake(form);
 	if (!parsed.ok) return parsed.spam ? "sent" : "failed";
 	const { intake } = parsed;
