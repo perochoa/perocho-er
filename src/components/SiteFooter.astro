@@ -1,0 +1,42 @@
+---
+import Logo from "./Logo.astro";
+import { site } from "../site";
+---
+
+<footer class="site-footer">
+	<div class="wrap row">
+		<p class="brand"><Logo size="1.25rem" /> {site.name}</p>
+		<p>
+			© {new Date().getFullYear()} · <a href={`mailto:${site.email}`}>{site.email}</a>
+		</p>
+	</div>
+</footer>
+
+<style>
+	.site-footer {
+		border-top: 1px solid var(--line);
+		color: var(--muted);
+		font-size: 0.875rem;
+	}
+	.row {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: space-between;
+		align-items: center;
+		gap: 0.5rem 2rem;
+		padding-block: 1.5rem;
+	}
+	p {
+		margin: 0;
+	}
+	.brand {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: var(--ink);
+		font-weight: 600;
+	}
+	.brand :global(svg) {
+		color: var(--accent);
+	}
+</style>

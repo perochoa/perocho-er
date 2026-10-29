@@ -1,0 +1,85 @@
+---
+import { getCollection } from "astro:content";
+import Logo from "./Logo.astro";
+import { site } from "../site";
+
+// Links point at "/#..." so they also work from the 404 page.
+const hasRepairs = (await getCollection("repairs")).length > 0;
+---
+
+<header class="site-header">
+	<div class="wrap bar">
+		<a class="brand" href="/">
+			<Logo size="1.75rem" />
+			<span>Perocho <span class="accent">Repairs</span></span>
+		</a>
+		<nav aria-label="Sections">
+			<a href="/#services">Services</a>
+			<a href="/#how">How it works</a>
+			{hasRepairs && <a href="/#repairs">Past repairs</a>}
+			<a href="/#contact">Contact</a>
+		</nav>
+		<a class="button small" href={site.messengerUrl}>Message us</a>
+	</div>
+</header>
+
+<style>
+	.site-header {
+		position: sticky;
+		top: 0;
+		z-index: 10;
+		background: color-mix(in srgb, var(--bg) 88%, transparent);
+		backdrop-filter: blur(8px);
+		border-bottom: 1px solid var(--line);
+	}
+	.bar {
+		display: flex;
+		align-items: center;
+		gap: 1.5rem;
+		min-height: 4rem;
+	}
+	.brand {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		color: var(--ink);
+		font-size: 1.125rem;
+		font-weight: 700;
+		text-decoration: none;
+	}
+	.brand :global(svg) {
+		color: var(--accent);
+	}
+	.accent {
+		color: var(--accent);
+	}
+	nav {
+		display: flex;
+		gap: 1.5rem;
+		margin-left: auto;
+	}
+	nav a {
+		color: var(--muted);
+		font-weight: 600;
+		font-size: 0.9375rem;
+		text-decoration: none;
+	}
+	nav a:hover {
+		color: var(--accent);
+	}
+	.button {
+		margin-left: auto;
+	}
+	nav + .button {
+		margin-left: 0;
+	}
+	/* On phones the sections are a short scroll away; keep the bar to brand and button. */
+	@media (max-width: 48rem) {
+		nav {
+			display: none;
+		}
+		nav + .button {
+			margin-left: auto;
+		}
+	}
+</style>

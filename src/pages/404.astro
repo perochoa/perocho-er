@@ -4,8 +4,23 @@ import { site } from "../site";
 ---
 
 <BaseLayout title={`Page not found · ${site.name}`} description="This page doesn't exist.">
-	<main>
+	<main class="wrap">
+		<p class="eyebrow">404</p>
 		<h1>Page not found</h1>
-		<p><a href="/">Go to the {site.name} home page</a>.</p>
+		<p>This page doesn't exist, or it moved.</p>
+		<a class="button" href="/">Go to the home page</a>
 	</main>
 </BaseLayout>
+
+<style>
+	main {
+		padding-block: clamp(3rem, 2rem + 5vw, 6rem);
+	}
+	h1 {
+		margin: 0 0 1rem;
+	}
+	p:not(.eyebrow) {
+		margin: 0 0 2rem;
+		color: var(--muted);
+	}
+</style>
