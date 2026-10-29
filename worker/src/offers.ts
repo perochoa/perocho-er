@@ -131,8 +131,13 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 // Takes only this tech out. Once nobody's left, the customer hears it's a no.
 async function decline(env: Env, { offer, request, intake }: Loaded) {
 	if (request.status !== "pending") return;
-	const changed = await env.DB.prepare("UPDATE offers SET declined = 1 WHERE token = ? AND declined = 0")
-		.bind(offer.token)
+	// Checked again here, not only on what was loaded: had they just taken it in another tab, their
+	// hold is now the booking and mustn't be deleted.
+	const changed = await env.DB.prepare(
+		`UPDATE offers SET declined = 1 WHERE token = ?1 AND declined = 0
+		 AND (SELECT status FROM requests WHERE id = ?2) = 'pending'`,
+	)
+		.bind(offer.token, request.id)
 		.run();
 	if (changed.meta.changes !== 1) return;
 	if (offer.hold_id) {

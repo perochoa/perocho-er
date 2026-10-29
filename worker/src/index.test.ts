@@ -763,6 +763,37 @@ test("the hourly job leaves the booking alone", async () => {
 	assert.equal(calendars["sam@example.com"].filter((e: any) => e.status === "confirmed").length, 1);
 });
 
+test("taking it in one tab and declining in another keeps the booking", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+
+	// The decline loads the request while it's open, then waits while the confirm goes through.
+	let resume!: () => void;
+	const paused = new Promise<void>((resolve) => (resume = resolve));
+	const prepare = db.prepare;
+	db.prepare = (sql: string) => {
+		const statement = prepare(sql);
+		if (!sql.startsWith("UPDATE offers SET declined = 1")) return statement;
+		return {
+			...statement,
+			bind: (...values: any[]) => {
+				const bound = statement.bind(...values);
+				return { ...bound, run: async () => (await paused, bound.run()) };
+			},
+		};
+	};
+	const declining = press(sam, "decline");
+	await press(sam, "confirm");
+	resume();
+	await declining;
+	db.prepare = prepare;
+
+	assert.equal(status(), "confirmed");
+	assert.ok(!deleted.some((d) => d.calendarId === "sam@example.com"));
+	assert.equal(calendars["sam@example.com"].filter((e: any) => e.status === "confirmed").length, 1);
+});
+
 test("one unreadable calendar costs only that tech their times", async () => {
 	const errors: unknown[] = [];
 	const original = console.error;
