@@ -62,7 +62,20 @@ All free tiers. Do these once.
 
 ```sh
 npm test        # slot logic, form parsing, and the handler with Google and Fastmail faked
-npm run check   # typecheck
+npm run check   # typecheck the worker (no Node types) and the tests (tsconfig.test.json)
+npm run types   # regenerate worker-configuration.d.ts after changing wrangler.jsonc
+```
+
+`Env` comes from `worker-configuration.d.ts`, generated from `vars` and `secrets.required` in
+`wrangler.jsonc`. Commit it; CI fails if it's out of date. Add a new secret to
+`secrets.required` as well: that types it, and deploy fails until it's set.
+
+Only `SITE_URL` may read `/slots` from a browser. To try the form from `npm run dev` on the site
+with `npx wrangler dev`, allow the dev server in a `worker/.dev.vars` file (gitignored), along
+with the secrets:
+
+```sh
+DEV_ORIGINS=http://localhost:4321
 ```
 
 Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed.
