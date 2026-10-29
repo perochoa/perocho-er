@@ -57,11 +57,11 @@ async function slots(env: Env, origin: string | null, ip: string | null): Promis
 		return new Response("Too many requests", { status: 429 });
 	}
 	const allowed = [env.SITE_URL, ...env.DEV_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)];
-	const { slots } = await findSlots(env, await accessToken(env.GOOGLE_SERVICE_ACCOUNT));
+	const { slots: open } = await findSlots(env, await accessToken(env.GOOGLE_SERVICE_ACCOUNT));
 	return Response.json(
 		{
 			timeZone: env.TIME_ZONE,
-			slots: slots.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })),
+			slots: open.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })),
 		},
 		{
 			headers: {
