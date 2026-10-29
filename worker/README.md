@@ -124,6 +124,17 @@ DEV_ORIGINS=http://localhost:4321
 Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
 already sent keep going to the techs they were sent to.
 
+To check a TECHS list before or after setting it, put it in `techs.json` here (keep it out of
+git) and the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or
+pass `--key <file>`:
+
+```sh
+npm run check-techs             # the list, calendar sharing, "Available" blocks and open times
+npm run check-techs -- --send   # also emails each tech a test (FASTMAIL_TOKEN in .dev.vars)
+```
+
+It changes nothing on the calendars, and exits 1 if any check failed.
+
 ## Spam
 
 Two defences, neither needing JS:
