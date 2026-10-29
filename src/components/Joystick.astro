@@ -127,17 +127,18 @@ const { requestHref = "/request/" } = Astro.props;
 			return length ? { x: sum.x / length, y: sum.y / length } : rest;
 		};
 
+		// The wear mark stays put while the stick wanders; it fades out once fixed.
+		const ex = BASE.x * MAX * WORN_REACH;
+		const ey = -BASE.y * MAX * WORN_REACH;
+		worn.setAttribute("cx", String(C + ex));
+		worn.setAttribute("cy", String(C + ey));
+		// Same bow as the static drawing's trail, turned to follow the drift.
+		const qx = C + ex / 2 - 0.28 * ey;
+		const qy = C + ey / 2 + 0.28 * ex;
+		trail.setAttribute("d", `M${C} ${C} Q ${qx} ${qy} ${C + ex} ${C + ey}`);
+
 		const draw = () => {
 			stick.setAttribute("transform", `translate(${pos.x * MAX} ${-pos.y * MAX})`);
-			// The wear mark stays put while the stick wanders; it fades out once fixed.
-			const ex = BASE.x * MAX * WORN_REACH;
-			const ey = -BASE.y * MAX * WORN_REACH;
-			worn.setAttribute("cx", String(C + ex));
-			worn.setAttribute("cy", String(C + ey));
-			// Same bow as the static drawing's trail, turned to follow the drift.
-			const qx = C + ex / 2 - 0.28 * ey;
-			const qy = C + ey / 2 + 0.28 * ex;
-			trail.setAttribute("d", `M${C} ${C} Q ${qx} ${qy} ${C + ex} ${C + ey}`);
 		};
 
 		const emit = () => {
