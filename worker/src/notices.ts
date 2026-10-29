@@ -1,7 +1,7 @@
 // The emails and calendar text a request produces, beyond the summary in intake.ts.
 
 import type { Mail } from "./fastmail.ts";
-import { describe, type Intake, stop, what } from "./intake.ts";
+import { describe, type StoredIntake as Intake, stop, what } from "./intake.ts";
 
 export interface Offered {
 	name: string;
@@ -15,6 +15,8 @@ type Message = Omit<Mail, "from">;
 const subject = (intake: Intake, time: string | null) =>
 	`Repair request: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`;
 
+// New requests always have a time; `time` is null only for ones filed before times were required.
+
 // The same request to every tech, each with their own link.
 export const toTech = (intake: Intake, time: string | null, tech: Offered): Message => ({
 	to: tech.email,
@@ -26,7 +28,7 @@ export const toTech = (intake: Intake, time: string | null, tech: Offered): Mess
 		`Take it or decline it: ${tech.link}`,
 		"The first tech to take it gets it. Declining only takes you out; the others can still take it.",
 		...(tech.held ? ["It's on your calendar as a tentative hold until someone takes it."] : []),
-		"Reply to this email to reach them.",
+		"Call them to talk through the price, or reply to this email to reach them.",
 	].join("\n"),
 });
 
@@ -62,16 +64,14 @@ export const record = (intake: Intake, time: string | null, to: string, techs: O
 const hi = (intake: Intake) => `Hi ${intake.name},`;
 const yours = (intake: Intake, time: string | null) => ["", "Your request:", describe(intake, time)];
 
-export const received = (intake: Intake, time: string | null): Message => ({
+export const received = (intake: Intake, time: string): Message => ({
 	to: intake.email,
 	subject: `We got your repair request: ${what(intake)}`,
 	text: [
 		hi(intake),
 		"",
-		time
-			? `Thanks! We've passed your request on to our techs. We'll email you again when one of them confirms ${stop(time)} Nothing is booked until then.`
-			: "Thanks! We've passed your request on to our techs, and one of them will email you to find a time.",
-		"Reply to this email if anything changes.",
+		`Thanks! We've passed your request on to our techs. We'll email you again when one of them confirms your drop-off for ${stop(time)} Nothing is booked until then.`,
+		"A tech may call you to talk through the price. Reply to this email if anything changes.",
 		...yours(intake, time),
 	].join("\n"),
 });
@@ -95,9 +95,9 @@ export const confirmed = (intake: Intake, time: string | null, tech: string): Me
 		hi(intake),
 		"",
 		time
-			? `${tech} has confirmed your repair for ${stop(time)}`
+			? `${tech} has confirmed your repair. Drop off your device on ${stop(time)}`
 			: `${tech} has taken your repair and will be in touch to find a time.`,
-		"Reply to this email if you need to change anything.",
+		"Reply to this email if you need the address or to change anything.",
 		...yours(intake, time),
 	].join("\n"),
 });

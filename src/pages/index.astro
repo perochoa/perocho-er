@@ -23,21 +23,33 @@ const monthFormat = new Intl.DateTimeFormat("en-CA", { month: "long", year: "num
 // Only facts the site already states elsewhere; nothing invented. The rating is in the hero.
 const facts = [
 	{ value: "~1 hr", label: "for most stick drift fixes" },
-	{ value: "Drop-off", label: "or we come to you" },
-	{ value: "Cash", label: "or Interac e-Transfer" },
+	{ value: "Drop-off", label: site.intakeUrl ? "at a time you pick online" : "in Mississauga" },
+	{ value: "Cash", label: "or Interac e-Transfer on pickup" },
 ];
 
-const steps = [
-	{
-		title: "Request a repair",
-		text: site.intakeUrl
-			? "Fill in our form, or message us on Messenger or by email."
-			: "Message us on Messenger or by email, about your device.",
-	},
-	{ title: "Get a quote", text: "We reply with a price and agree on a time." },
-	{ title: "Drop it off", text: "Or we come to you." },
-	{ title: "Pay when it's done", text: "By cash or Interac e-Transfer." },
-];
+// Matches what the request form and the worker's emails tell customers.
+const steps = site.intakeUrl
+	? [
+			{
+				title: "Request a repair",
+				text: "Fill in the form with your contact details and phone number, the device and what's wrong.",
+			},
+			{ title: "Pick a time", text: "Choose an open drop-off time from our techs' calendars." },
+			{
+				title: "Get it confirmed",
+				text: "The first tech to take your request confirms it by email, and may call you about the quote. If nobody can make that time, we email you too.",
+			},
+			{
+				title: "Drop it off",
+				text: "Bring it in at the confirmed time. Pay by cash or Interac e-Transfer when you pick it up.",
+			},
+		]
+	: [
+			{ title: "Message us", text: "On Messenger or by email, about your device and what's wrong." },
+			{ title: "Get a quote", text: "We reply with a price and a time to drop it off." },
+			{ title: "Drop it off", text: "Bring it in at the time we agreed." },
+			{ title: "Pay on pickup", text: "By cash or Interac e-Transfer." },
+		];
 ---
 
 <BaseLayout title={site.name} description={site.description}>
@@ -46,7 +58,7 @@ const steps = [
 			<HeroScene />
 			<div class="wrap hero-grid">
 				<div>
-					<p class="eyebrow">Family-run · Mississauga</p>
+					<p class="eyebrow">Family-run · Drop-off in Mississauga</p>
 					<h1>{site.tagline}</h1>
 					<p class="lede">{site.intro}</p>
 					<div class="actions">
@@ -115,7 +127,7 @@ const steps = [
 		<section id="how" class="band alt" aria-labelledby="how-title">
 			<div class="wrap">
 				<p class="eyebrow">How it works</p>
-				<h2 id="how-title">Four simple steps</h2>
+				<h2 id="how-title">From request to pickup</h2>
 				<ol class="steps">
 					{
 						steps.map((step) => (
@@ -126,6 +138,16 @@ const steps = [
 						))
 					}
 				</ol>
+				{
+					site.intakeUrl && (
+						<p class="next">
+							<a class="button" href="/request/">Request a repair</a>
+							<span>
+								Questions first? <a href={site.messengerUrl}>Message us</a>.
+							</span>
+						</p>
+					)
+				}
 			</div>
 		</section>
 
@@ -168,14 +190,20 @@ const steps = [
 						<p class="eyebrow">Contact</p>
 						<h2 id="contact-title">Tell us what's wrong</h2>
 						<p>
-							<a href={site.messengerUrl}>Message us on Messenger</a> or email{" "}
-							<a href={`mailto:${site.email}`}>{site.email}</a>
-							{site.intakeUrl && (
-								<>
-									, or <a href="/request/">send us a repair request</a>
-								</>
-							)}
-							.{" "}
+							{
+								site.intakeUrl ? (
+									<>
+										<a href="/request/">Send a repair request</a> and pick a drop-off time, or ask us
+										anything first on <a href={site.messengerUrl}>Messenger</a> or at{" "}
+										<a href={`mailto:${site.email}`}>{site.email}</a>.
+									</>
+								) : (
+									<>
+										<a href={site.messengerUrl}>Message us on Messenger</a> or email{" "}
+										<a href={`mailto:${site.email}`}>{site.email}</a>.
+									</>
+								)
+							}{" "}
 							{
 								site.marketplace && (
 									<>
@@ -198,20 +226,20 @@ const steps = [
 						<ul class="checklist">
 							<li>the device and its model</li>
 							<li>what's wrong with it</li>
-							<li>a photo, if you can</li>
+							<li>a photo, if you're messaging us</li>
 						</ul>
 						{
 							(site.serviceArea || site.hours) && (
 								<dl>
 									{site.serviceArea && (
 										<div>
-											<dt>Service area</dt>
+											<dt>Where</dt>
 											<dd>{site.serviceArea}</dd>
 										</div>
 									)}
 									{site.hours && (
 										<div>
-											<dt>Hours</dt>
+											<dt>When</dt>
 											<dd>{site.hours}</dd>
 										</div>
 									)}
@@ -411,6 +439,14 @@ const steps = [
 		margin: 0;
 		color: var(--muted);
 	}
+	.next {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.75rem 1.25rem;
+		margin: 2.5rem 0 0;
+		color: var(--muted);
+	}
 
 	/* Repairs */
 	.meta,
@@ -521,6 +557,10 @@ const steps = [
 		}
 		.steps li::after {
 			display: none;
+		}
+		/* One column: the marker sits beside its step instead of above it. */
+		.steps li {
+			padding: 0.5rem 0 0 3.5rem;
 		}
 		.fact-grid {
 			grid-template-columns: minmax(0, 1fr);

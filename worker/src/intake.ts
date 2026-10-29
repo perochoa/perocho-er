@@ -3,23 +3,31 @@
 export interface Intake {
 	name: string;
 	email: string;
+	phone: string;
 	service: string;
 	device: string;
 	problem: string;
-	visit: "drop-off" | "house-call";
-	slot: number | null; // epoch ms, or null when they'll arrange a time later
+	slot: number; // epoch ms of the drop-off time they picked
 	notes: string;
 }
 
-export type Parsed = { ok: true; intake: Intake } | { ok: false; spam: boolean };
+// Requests filed before times and phone numbers were required (2026-10-29) are still in D1: their
+// intake may have no phone, a null slot and a `visit` nothing reads any more. Read rows as this.
+export type StoredIntake = Omit<Intake, "phone" | "slot"> & { phone?: string; slot: number | null };
 
-const VISITS = ["drop-off", "house-call"] as const;
+export type Parsed = { ok: true; intake: Intake } | { ok: false; spam: boolean };
 
 // Loose on purpose: catches typos and junk, not every invalid address.
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-const oneOf = <T extends string>(values: readonly T[], value: string): value is T =>
-	(values as readonly string[]).includes(value);
+// Also loose: digits with the usual separators and an optional leading +, 10 to 15 digits
+// (a local number with its area code, up to an international one). Kept as they typed it.
+const PHONE = /^\+?[\d\s().-]+$/;
+const digits = (phone: string) => phone.replace(/\D/g, "").length;
+export const validPhone = (phone: string) => PHONE.test(phone) && digits(phone) >= 10 && digits(phone) <= 15;
+
+// For a tel: link: the digits, and the + if they gave one.
+export const dialable = (phone: string) => (phone.trim().startsWith("+") ? "+" : "") + phone.replace(/\D/g, "");
 
 export function parseIntake(form: FormData): Parsed {
 	// Single-line unless told otherwise: CR/LF would leak into subjects and summaries.
@@ -32,33 +40,29 @@ export function parseIntake(form: FormData): Parsed {
 	// Hidden from people; bots fill it in.
 	if (field("website", 200)) return { ok: false, spam: true };
 
-	const visit = field("visit", 20);
-	const slotText = field("slot", 40);
-	const slot = slotText ? Date.parse(slotText) : null;
+	// Required: the form only sends once a time is picked.
+	const slot = Date.parse(field("slot", 40));
 	const fields = {
 		name: field("name", 100),
 		email: field("email", 200),
+		phone: field("phone", 30),
 		service: field("service", 150),
 		device: field("device", 150),
 		problem: field("problem", 2000, true),
 		notes: field("notes", 2000, true),
 	};
 
-	const invalid = { ok: false, spam: false } as const;
-	if (!oneOf(VISITS, visit)) return invalid;
-
 	const valid =
 		fields.name !== "" &&
 		fields.device !== "" &&
 		fields.problem !== "" &&
 		EMAIL.test(fields.email) &&
-		(slot === null || !Number.isNaN(slot));
+		validPhone(fields.phone) &&
+		!Number.isNaN(slot);
 
-	if (!valid) return invalid;
-	return { ok: true, intake: { ...fields, visit, slot } };
+	if (!valid) return { ok: false, spam: false };
+	return { ok: true, intake: { ...fields, slot } };
 }
-
-const VISIT_LABELS = { "drop-off": "Drop-off", "house-call": "House call" };
 
 export function formatTime(ms: number, timeZone: string): string {
 	return new Intl.DateTimeFormat("en-CA", {
@@ -74,14 +78,15 @@ export function formatTime(ms: number, timeZone: string): string {
 // Ends a sentence on a time without doubling the period of "a.m." and "p.m.".
 export const stop = (time: string) => (time.endsWith(".") ? time : `${time}.`);
 
-export function describe(intake: Intake, time: string | null): string {
+// `time` is null, and the phone missing, only on requests from before both were required.
+export function describe(intake: StoredIntake, time: string | null): string {
 	const lines = [
 		["Name", intake.name],
 		["Email", intake.email],
+		["Phone", intake.phone],
 		["Service", intake.service],
 		["Device", intake.device],
-		["Visit", VISIT_LABELS[intake.visit]],
-		["Requested time", time ?? "None picked; arrange with them"],
+		["Drop-off time", time],
 	]
 		.filter(([, value]) => value)
 		.map(([label, value]) => `${label}: ${value}`);
@@ -92,4 +97,4 @@ export function describe(intake: Intake, time: string | null): string {
 }
 
 // What the request is for: the chosen service, else the device.
-export const what = (intake: Intake) => intake.service || intake.device;
+export const what = (intake: StoredIntake) => intake.service || intake.device;

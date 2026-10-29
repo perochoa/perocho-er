@@ -3,8 +3,9 @@
 A Cloudflare Worker behind the site's repair request form (`/request/`). It reads each tech's
 Google Calendar to offer open times, and offers each request to every tech by email, with a
 tentative hold on the calendar of every tech free at the picked time. The first tech to take it
-gets it, and the customer is emailed at each step. People without JS can still send the form;
-they just don't get the time list.
+gets it, and the customer is emailed at each step. Repairs are drop-off only: the picked time is
+when the customer brings the device in. A time and a phone number are required; without JS, or
+when there are no open times, the form points people to Messenger and email instead.
 
 Messenger, email and Facebook Marketplace stay as they are. The form is one more way in.
 
@@ -19,7 +20,9 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
 - **Every request is emailed to every tech**, each with their own link, and a copy without
   links goes to `repairs@perocho.com`. If you're free at the picked time it's also on your
   calendar as a yellow, tentative `Request: ...` event, with the details and your link in its
-  description. Reply to the email to reach the customer.
+  description. Every request has the customer's phone number, so you can call them to talk
+  through the price (the offer page has a tap-to-call link); replying to the email reaches them
+  too.
 - **Open your link to take it or decline it.** Opening it changes nothing; the buttons do.
   - **Take it:** the first tech to press it gets the request. Your hold turns into a green
     `Repair: ...` booking (or one is created if you didn't have a hold), everyone else's hold
@@ -30,8 +33,8 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
     can change your mind and take it while it's open. Once every tech has declined, the customer
     is told nobody can take it.
   - **Nobody takes it in time:** once the picked time starts it can't be taken, and within the
-    hour it expires: any holds are deleted and the customer is told nobody could take it. A
-    request without a time expires after 7 days.
+    hour it expires: any holds are deleted and the customer is told nobody could take it.
+    Requests sent before a time was required have none; those expire after 7 days.
 - **To cancel or move a booking**, change or delete the event and email the customer yourself.
 - **The customer gets an email** when the request comes in, when a tech takes it, when every
   tech declines or it expires, and if it failed to go through.
@@ -156,5 +159,5 @@ Two defences, neither needing JS:
   Over-limit posts show up in the worker's logs as `rate limited a request`.
 
   `GET /slots` has its own limit, **20 fetches a minute** per IP (`SLOTS_LIMITER`), since each one
-  reads every tech's calendar. Past it the worker answers 429, the form shows no time list and
-  people put the times that suit them in the notes. These show up as `rate limited /slots`.
+  reads every tech's calendar. Past it the worker answers 429, and the form says it couldn't
+  load the times and points people to Messenger and email. These show up as `rate limited /slots`.

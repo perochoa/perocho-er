@@ -11,7 +11,8 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		<p class="eyebrow">Request a repair</p>
 		<h1>Tell us about your device</h1>
 		<p class="lede">
-			We'll reply with a price and confirm a time. Nothing is booked until a tech confirms.{" "}
+			Pick a time to drop your device off, and a tech will call or email you about the price. Nothing is
+			booked until a tech confirms.{" "}
 			Prefer Facebook? <a href={site.messengerUrl}>Message us on Messenger</a>
 			{
 				site.marketplace && (
@@ -25,6 +26,21 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		{
 			site.intakeUrl ? (
 				<form method="post" action={`${site.intakeUrl}/request`} data-slots={`${site.intakeUrl}/slots`}>
+					<p class="hint">Every field is required unless it says optional.</p>
+
+					<!-- Without a time the worker turns the request down, so without JS (no time list) or
+					     without open times, point people to the other ways in. -->
+					<noscript>
+						<p class="notice">
+							Picking a drop-off time needs JavaScript. <a href={site.messengerUrl}>Message us on Messenger</a> or
+							email <a href={`mailto:${site.email}`}>{site.email}</a>, and we'll find a time.
+						</p>
+					</noscript>
+					<p class="notice" data-no-slots tabindex="-1" hidden>
+						<span data-no-slots-reason></span> <a href={site.messengerUrl}>Message us on Messenger</a> or email{" "}
+						<a href={`mailto:${site.email}`}>{site.email}</a>, and we'll find a time.
+					</p>
+
 					<div class="card">
 						<fieldset>
 							<legend>You</legend>
@@ -34,9 +50,14 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 							</label>
 							<label>
 								Email
-								<input type="email" name="email" autocomplete="email" maxlength="200" required />
+								<input type="email" name="email" autocomplete="email" maxlength="200" required aria-describedby="email-hint" />
 							</label>
-							<p class="hint">We'll email you to confirm we got it, and again when a tech takes it. Rather use Messenger? <a href={site.messengerUrl}>Message us there</a> instead.</p>
+							<p class="hint" id="email-hint">We'll email you when we get your request, and again when a tech confirms it.</p>
+							<label>
+								Phone
+								<input type="tel" name="phone" autocomplete="tel" inputmode="tel" maxlength="30" required aria-describedby="phone-hint" />
+							</label>
+							<p class="hint" id="phone-hint">With the area code, so a tech can call you about the price.</p>
 						</fieldset>
 					</div>
 
@@ -58,19 +79,15 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 								What's wrong?
 								<textarea name="problem" rows="4" maxlength="2000" required></textarea>
 							</label>
-							<div class="choice" role="radiogroup" aria-labelledby="visit-label">
-								<span id="visit-label">Drop off or house call?</span>
-								<label><input type="radio" name="visit" value="drop-off" checked required /> Drop off</label>
-								<label><input type="radio" name="visit" value="house-call" /> We come to you</label>
-							</div>
 						</fieldset>
 					</div>
 
 					<div class="card">
 						<fieldset>
-							<legend>When</legend>
-							<div class="slots" data-slot-field role="group" aria-labelledby="slot-label" hidden>
-								<span id="slot-label">Pick a time</span>
+							<legend>Drop-off time</legend>
+							<p class="hint">When you'll bring your device in. Only times when a tech is free are shown.</p>
+							<div class="slots" data-slot-field role="group" aria-labelledby="slot-label" aria-describedby="slot-error" hidden>
+								<span id="slot-label">Pick a day, then a time</span>
 								<div class="week">
 									<button class="step" type="button" data-prev aria-label="Previous week">‹</button>
 									<span data-week-label aria-live="polite"></span>
@@ -79,16 +96,20 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 								<div class="days" data-days></div>
 								<p class="hint" data-day-note></p>
 								<div data-times></div>
-								<div class="choice">
-									<label><input type="radio" name="slot" value="" checked /> No time yet: find one with us</label>
-								</div>
 							</div>
-							<p class="hint" data-slot-note aria-live="polite">Tell us what times work in the notes, and we'll confirm one.</p>
-							<label>
-								<span>Anything else? <span class="optional">(optional)</span></span>
-								<textarea name="notes" rows="3" maxlength="2000"></textarea>
-							</label>
+							<div class="status" aria-live="polite">
+								<p class="hint" data-slot-note></p>
+								<p class="error" id="slot-error" data-slot-error></p>
+							</div>
 						</fieldset>
+					</div>
+
+					<div class="card">
+						<label>
+							<span>Anything else? <span class="optional">(optional)</span></span>
+							<textarea name="notes" rows="3" maxlength="2000" aria-describedby="notes-hint"></textarea>
+						</label>
+						<p class="hint" id="notes-hint">What you've tried, or anything you're bringing with it.</p>
 					</div>
 
 					<!-- Hidden from people; bots fill it in. -->
@@ -99,7 +120,8 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 						</label>
 					</div>
 
-					<button class="button" type="submit">Send request</button>
+					<!-- Shown once there are times to pick. -->
+					<button class="button" type="submit" hidden>Send request</button>
 				</form>
 			) : (
 				<p>
@@ -114,13 +136,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	const form = document.querySelector<HTMLFormElement>("form[data-slots]");
 
 	if (form) {
-		// One request per press: a second one would come back "taken", beaten by the first. The back
-		// button brings the page back as it was left, so turn the button on again then.
 		const send = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-		form.addEventListener("submit", () => (send.disabled = true));
-		window.addEventListener("pageshow", () => (send.disabled = false));
-
-		// Without JS the form still works; people put the times that suit them in the notes.
 		const field = form.querySelector<HTMLElement>("[data-slot-field]")!;
 		const days = field.querySelector<HTMLElement>("[data-days]")!;
 		const times = field.querySelector<HTMLElement>("[data-times]")!;
@@ -129,6 +145,29 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const next = field.querySelector<HTMLButtonElement>("[data-next]")!;
 		const dayNote = field.querySelector<HTMLElement>("[data-day-note]")!;
 		const note = form.querySelector<HTMLElement>("[data-slot-note]")!;
+		const error = form.querySelector<HTMLElement>("[data-slot-error]")!;
+		const noSlots = form.querySelector<HTMLElement>("[data-no-slots]")!;
+		const noSlotsReason = noSlots.querySelector<HTMLElement>("[data-no-slots-reason]")!;
+		note.textContent = "Loading open times…";
+
+		// A request needs a time, so with none to pick there's nothing to send: say so at the top of
+		// the form, before they fill it in, and point them to Messenger and email.
+		const unavailable = (reason: string) => {
+			field.hidden = true;
+			send.hidden = true;
+			noSlots.hidden = false;
+			noSlotsReason.textContent = reason;
+			note.textContent = reason;
+		};
+
+		// Loose like the worker's check: separators and a leading + are fine, as long as there are 10
+		// to 15 digits.
+		const phone = form.querySelector<HTMLInputElement>("[name=phone]")!;
+		phone.addEventListener("input", () => {
+			const digits = phone.value.replace(/\D/g, "").length;
+			const valid = phone.value === "" || (/^\s*\+?[\d\s().-]+$/.test(phone.value) && digits >= 10 && digits <= 15);
+			phone.setCustomValidity(valid ? "" : "Enter your phone number with its area code, like 416-555-0123.");
+		});
 
 		// Dates are plain calendar days: noon UTC, so adding days and formatting never shifts them.
 		const noon = (date: string) => new Date(`${date}T12:00:00Z`);
@@ -146,8 +185,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		let week = 0;
 		let picked = "";
 
-		const none = form.querySelector<HTMLInputElement>("[name=slot][value='']")!;
-		const chosen = () => form.querySelector<HTMLInputElement>("[name=slot]:checked") ?? none;
+		const chosen = () => form.querySelector<HTMLInputElement>("[name=slot]:checked");
 
 		// Seven day buttons at a time. The first week starts today, so it shows a full seven days; the
 		// arrows step through the Sunday-to-Saturday weeks after it that have times.
@@ -184,7 +222,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const step = (by: number) => {
 			week += by;
 			// A picked time stays picked; its day opens again when its week comes back.
-			const slot = chosen().value;
+			const slot = chosen()?.value;
 			const date = slot && dateOf(new Date(slot));
 			picked = date && inWeek(date, weeks[week]) ? date : "";
 			render();
@@ -192,17 +230,20 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		prev.addEventListener("click", () => step(-1));
 		next.addEventListener("click", () => step(1));
 
-		const hint = "Times when a tech is free. We'll hold it for you until a tech confirms.";
-		const describe = (radio: HTMLInputElement) => (radio.value ? `We'll hold ${radio.dataset.label} for you until a tech confirms.` : hint);
+		// Ends a sentence on a time without doubling the period of "a.m." and "p.m.".
+		const stop = (text: string) => (text.endsWith(".") ? text : `${text}.`);
+		const describe = (radio: HTMLInputElement | null) => (radio ? `${stop(radio.dataset.label!)} We'll hold it for you until a tech confirms.` : "");
 		field.addEventListener("change", (event) => {
 			const radio = event.target as HTMLInputElement;
-			if (radio.name === "slot") note.textContent = describe(radio);
+			if (radio.name !== "slot") return;
+			note.textContent = describe(radio);
+			error.textContent = "";
 		});
 
 		// Builds the picker from a /slots response. Called again whenever the times change, so it keeps
 		// their pick, the day they had open and the week they were on wherever those still exist.
 		const show = ({ timeZone, slots }: { timeZone: string; slots: { start: string; end: string }[] }) => {
-			const before = chosen().value;
+			const before = chosen()?.value ?? "";
 			const focused = document.activeElement instanceof HTMLInputElement && document.activeElement.name === "slot" ? document.activeElement.value : null;
 			const shownWeek = weeks[week];
 
@@ -235,13 +276,13 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 				group.append(chip);
 			}
 
-			const lost = before !== "" && chosen() === none;
-			none.checked = chosen() === none;
+			const lost = before !== "" && !chosen();
 			if (focused !== null) form.querySelector<HTMLInputElement>(`[name=slot][value="${focused}"]`)?.focus();
+			if (lost) error.textContent = "The time you picked was just taken. Pick another.";
 
 			if (slots.length === 0) {
-				field.hidden = true;
-				note.textContent = `${lost ? "The time you picked was just taken. " : ""}No open times online right now. Tell us what works in the notes, and we'll find one.`;
+				weeks = [];
+				unavailable("There are no open times online right now.");
 				return;
 			}
 			// This week starts today instead of on Sunday.
@@ -251,8 +292,30 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			if (!groups.has(picked) || !inWeek(picked, weeks[week])) picked = "";
 			render();
 			field.hidden = false;
-			note.textContent = lost ? "The time you picked was just taken. Pick another, or leave it to us." : describe(chosen());
+			send.hidden = false;
+			noSlots.hidden = true;
+			note.textContent = describe(chosen());
 		};
+
+		// Without a picked time the worker turns the request down, so stop here and take them to the
+		// picker. The browser has already checked the other fields by now.
+		form.addEventListener("submit", (event) => {
+			if (chosen()) {
+				// One request per press: a second one would come back "taken", beaten by the first.
+				send.disabled = true;
+				return;
+			}
+			event.preventDefault();
+			if (weeks.length === 0) {
+				noSlots.focus();
+				return;
+			}
+			error.textContent = "Pick a drop-off time before you send your request.";
+			const target = picked ? groups.get(picked)!.querySelector("input") : buttons.find((button) => !button.disabled);
+			(target ?? next).focus();
+		});
+		// The back button brings the page back as it was left, so turn the button on again then.
+		window.addEventListener("pageshow", () => (send.disabled = false));
 
 		// Techs change their calendars while people fill in the form, so fetch again every so often
 		// while the page is in view, and as soon as they come back to it. The picker is only rebuilt
@@ -272,8 +335,11 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 					last = body;
 					show(JSON.parse(body));
 				})
-				// Keep whatever is showing; the next refresh tries again.
-				.catch(() => {})
+				// Keep whatever is showing, and the next refresh tries again. With nothing showing yet,
+				// say so instead of leaving them waiting.
+				.catch(() => {
+					if (last === "") unavailable("We couldn't load the open times.");
+				})
 				.finally(() => (loading = false));
 		};
 		load();
@@ -297,8 +363,14 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		color: var(--muted);
 	}
 	form {
+		--error: #b42318;
 		display: grid;
 		gap: 1.25rem;
+	}
+	@media (prefers-color-scheme: dark) {
+		form {
+			--error: #fda29b;
+		}
 	}
 	/* The card is a wrapper, not the fieldset: Safari draws a fieldset's legend on its border. */
 	.card {
@@ -322,7 +394,6 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		font-weight: 700;
 	}
 	label,
-	.choice > span,
 	.slots > span {
 		display: grid;
 		gap: 0.375rem;
@@ -356,8 +427,8 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		cursor: pointer;
 	}
 	.step {
-		width: 2.5rem;
-		height: 2.5rem;
+		width: 2.75rem;
+		height: 2.75rem;
 		font-size: 1.25rem;
 		line-height: 1;
 	}
@@ -398,7 +469,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	.slots :global(.chip) {
 		display: block;
 		position: relative;
-		padding: 0.5rem;
+		padding: 0.625rem 0.5rem;
 		text-align: center;
 		font-weight: 400;
 	}
@@ -438,31 +509,48 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	textarea {
 		resize: vertical;
 	}
-	.choice {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.5rem 1.25rem;
-	}
-	.choice > span {
-		flex-basis: 100%;
-	}
-	.choice label {
-		display: flex;
-		align-items: center;
-		gap: 0.5rem;
-		font-weight: 400;
-		font-size: 1rem;
-	}
-	input[type="radio"] {
-		accent-color: var(--accent);
-		margin: 0;
-	}
 	.hint,
 	.optional {
 		margin: 0;
 		color: var(--muted);
 		font-size: 0.875rem;
 		font-weight: 400;
+	}
+	/* A field's hint sits closer to it than to the next field: inside the fieldset's grid gap, and
+	   under the notes field, which has no fieldset. */
+	label + .hint {
+		margin-top: -0.625rem;
+	}
+	.card > label + .hint {
+		margin-top: 0.375rem;
+	}
+	.status {
+		display: grid;
+		gap: 0.5rem;
+	}
+	.status p:empty {
+		display: none;
+	}
+	.error {
+		margin: 0;
+		color: var(--error);
+		font-size: 0.9375rem;
+		font-weight: 600;
+	}
+	.notice {
+		margin: 0;
+		padding: 1rem 1.25rem;
+		border: 1px solid var(--accent);
+		border-radius: 0.75rem;
+		background: var(--surface);
+	}
+	.notice:focus {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+	.notice[hidden],
+	button[hidden] {
+		display: none;
 	}
 	.trap {
 		position: absolute;

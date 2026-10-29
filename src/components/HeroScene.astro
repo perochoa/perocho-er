@@ -29,6 +29,7 @@
 	const PULSE_SECONDS = 1.4;
 	const DOT_COUNT = 110;
 	const FLOOR_LIGHT = 0.4; // light-mode floor opacity
+	const FLOOR_NARROW = 1.8; // phones thin the whole scene out and draw it smaller, so the floor needs more
 
 	const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 	const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -136,7 +137,7 @@
 			stroke.addColorStop(0.35, colours.line);
 			ctx.strokeStyle = stroke;
 			ctx.lineWidth = 1;
-			ctx.globalAlpha = colours.floor;
+			ctx.globalAlpha = Math.min(1, colours.floor * (wide ? 1 : FLOOR_NARROW));
 			ctx.stroke();
 			if (pulse > 0) {
 				ctx.globalAlpha = 0.55 * pulse * pulse;
@@ -159,10 +160,12 @@
 			ctx.fillRect(0, 0, width, height);
 			ctx.globalCompositeOperation = "source-over";
 
-			// A faint accent horizon, strongest at the vanishing point.
+			// A faint accent horizon, strongest at the vanishing point. On wide screens it starts past the
+			// copy, so it doesn't run through the intro.
 			const glow = ctx.createLinearGradient(0, 0, width, 0);
 			const at = cx / width;
 			glow.addColorStop(0, "rgba(0,0,0,0)");
+			if (wide) glow.addColorStop(at - 0.12, "rgba(0,0,0,0)");
 			glow.addColorStop(at, colours.accent);
 			glow.addColorStop(1, "rgba(0,0,0,0)");
 			ctx.globalAlpha = 0.22 + 0.4 * pulse * pulse;

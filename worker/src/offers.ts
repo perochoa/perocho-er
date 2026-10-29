@@ -4,13 +4,13 @@
 
 import { type Mail, sendMail } from "./fastmail.ts";
 import { accessToken, bookEvent, createEvent, deleteEvent } from "./google.ts";
-import { describe, formatTime, type Intake, stop } from "./intake.ts";
+import { describe, dialable, formatTime, stop, type StoredIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
 
 interface RequestRow {
 	id: string;
 	intake: string;
-	slot_start: number | null;
+	slot_start: number | null; // null only on requests from before times were required
 	slot_end: number | null;
 	status: "pending" | "confirmed" | "declined" | "expired";
 	confirmed_by: string | null;
@@ -35,7 +35,7 @@ async function load(db: D1Database, token: string) {
 		.prepare("SELECT * FROM offers WHERE request_id = ? ORDER BY position")
 		.bind(request.id)
 		.all<OfferRow>();
-	const intake: Intake = JSON.parse(request.intake);
+	const intake: StoredIntake = JSON.parse(request.intake);
 	return { offer, request, offers, intake };
 }
 
@@ -161,7 +161,7 @@ async function decline(env: Env, { offer, request, intake }: Loaded) {
 	await send(env, [notices.declined(intake, time), notices.nobody(intake, time, env.MAIL_TO)]);
 }
 
-// A request with no time picked is left open this long before it expires.
+// Requests from before times were required have none; they're left open this long before they expire.
 const UNTIMED_DAYS = 7;
 
 // Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
@@ -179,7 +179,7 @@ export async function expire(env: Env, now = Date.now()): Promise<void> {
 		await send(
 			env,
 			expired.flatMap((request) => {
-				const intake: Intake = JSON.parse(request.intake);
+				const intake: StoredIntake = JSON.parse(request.intake);
 				const time = timeOf(env, request);
 				return [notices.expired(intake, time), notices.unclaimed(intake, time, env.MAIL_TO)];
 			}),
@@ -233,6 +233,8 @@ const html = (title: string, body: string, status = 200) =>
 	form { display: flex; gap: 0.75rem; flex-wrap: wrap; }
 	button { font: inherit; font-weight: 600; padding: 0.6rem 1.2rem; border-radius: 0.5rem; border: 1px solid var(--accent); cursor: pointer; background: none; color: var(--accent); }
 	button[value="confirm"] { background: var(--accent); color: Canvas; }
+	.call { margin: 0 0 1rem; }
+	.call a { color: var(--accent); font-weight: 600; }
 </style>
 </head>
 <body>
@@ -268,15 +270,19 @@ export async function page(env: Env, token: string): Promise<Response> {
 								? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
 								: [
 										"New repair request",
-										time ? `For ${stop(time)} The first tech to take it gets it.` : "No time picked. The first tech to take it gets it.",
+										`${time ? `Drop-off ${stop(time)} ` : ""}The first tech to take it gets it.`,
 										take + decline,
 									];
 
+	// Techs call to talk through the price, so the number is one tap away on a phone.
+	const call = intake.phone
+		? `<p class="call"><a href="tel:${escape(dialable(intake.phone))}">Call ${escape(intake.name)}: ${escape(intake.phone)}</a></p>\n`
+		: "";
 	return html(
 		title,
 		`<h1>${escape(title)}</h1>
 <p class="state">${escape(state)}</p>
-<pre>${escape(describe(intake, time))}</pre>
+${call}<pre>${escape(describe(intake, time))}</pre>
 ${buttons && `<form method="post">${buttons}</form>`}`,
 	);
 }
