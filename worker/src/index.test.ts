@@ -145,7 +145,8 @@ const submit = (fields: Record<string, string>, headers: Record<string, string> 
 
 test("lists only times when some tech is free", async () => {
 	const response = await worker.fetch(new Request("https://intake.test/slots"), env);
-	const { slots } = (await response.json()) as { slots: { start: string }[] };
+	const { timeZone, slots } = (await response.json()) as { timeZone: string; slots: { start: string }[] };
+	assert.equal(timeZone, env.TIME_ZONE);
 	const starts = slots.map((s) => s.start);
 	assert.ok(starts.includes(iso(slotStart)));
 	assert.ok(!starts.includes(iso(slotStart + hour)));
