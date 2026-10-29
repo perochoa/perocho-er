@@ -16,7 +16,8 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   you declined don't.
 - **A request shows up as a yellow, tentative `Request: ...` event** with the details in its
   description, and an email arrives at `contact@perocho.com`. Reply to the email to reach the
-  customer.
+  customer. If the email fails to send, the customer is still told the request went through,
+  so check the calendar too: the event has everything the email would have.
   - Confirm it: rename the event (e.g. `Booked: ...`). It keeps the time blocked.
   - Decline or move it: delete the event (that frees the time), then contact the customer.
 - Times are offered between 12 hours and 14 days ahead, in 60-minute slots on the hour (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in

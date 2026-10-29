@@ -210,6 +210,23 @@ test("re-reads the calendars on submit, not what /slots last saw", async () => {
 	assert.equal(holds.length, 0);
 });
 
+test("counts a held request as sent when only the email fails", async () => {
+	const fake = globalThis.fetch;
+	globalThis.fetch = async (input, init) =>
+		String(input) === "https://api.fastmail.com/jmap/api/"
+			? new Response("down", { status: 503 })
+			: fake(input, init);
+	const errors: unknown[] = [];
+	const original = console.error;
+	console.error = (error) => errors.push(error);
+	const response = await submit({ slot: iso(slotStart) });
+	console.error = original;
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.equal(holds.length, 1);
+	assert.match(holds[0].body.description, /Loud fan/);
+	assert.equal(errors.length, 1);
+});
+
 test("sends people to the failure page when a service is down", async () => {
 	globalThis.fetch = async () => new Response("down", { status: 503 });
 	const original = console.error;
