@@ -1,12 +1,12 @@
 // Intake for repairs.perocho.com.
-//   GET  /slots    open times across the techs' calendars, for the form's time list
+//   GET  /slots    open times in the techs' "Available" blocks, for the form's time list
 //   POST /request  the form; holds the picked time on a free tech's calendar and emails the techs,
 //                  then redirects back to the site (the form works without JS)
 
 import { sendMail } from "./fastmail.ts";
 import { accessToken, createHold, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
 import { describe, formatTime, parseIntake, replyTo, subject, what } from "./intake.ts";
-import { blocks, openSlots, parseWorkHours } from "./slots.ts";
+import { blocks, openSlots } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
@@ -38,8 +38,6 @@ async function findSlots(env: Env, token: string) {
 		slotMinutes: env.SLOT_MINUTES,
 		leadHours: env.LEAD_HOURS,
 		daysAhead: env.DAYS_AHEAD,
-		workHours: parseWorkHours(env.WORK_HOURS),
-		timeZone: env.TIME_ZONE,
 	};
 	const to = options.now + options.daysAhead * 86_400_000;
 	const events = await Promise.all(

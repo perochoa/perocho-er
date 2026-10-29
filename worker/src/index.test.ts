@@ -15,7 +15,6 @@ const env = {
 	MAIL_FROM: "contact@perocho.com",
 	MAIL_TO: "contact@perocho.com",
 	TIME_ZONE: "America/Toronto",
-	WORK_HOURS: "00:00-24:00", // every hour, so the tests don't depend on the time of day
 	SLOT_MINUTES: 60,
 	LEAD_HOURS: 12,
 	DAYS_AHEAD: 14,
@@ -62,12 +61,16 @@ let slotsLimitKeys: string[];
 let slotsAllowed: number;
 
 beforeEach(() => {
-	// Richard is busy at the slot; Sam is free. Both are busy the hour after.
+	// Both are available every hour for the next two weeks. Richard is busy at the slot; Sam is
+	// free. Both are busy the hour after.
+	const available = { summary: "Available", start: { dateTime: iso(slotStart - 24 * hour) }, end: { dateTime: iso(slotStart + 13 * 24 * hour) } };
 	calendars = {
 		"richard@example.com": [
+			available,
 			{ summary: "Dentist", start: { dateTime: iso(slotStart) }, end: { dateTime: iso(slotStart + 2 * hour) } },
 		],
 		"sam@example.com": [
+			available,
 			{ summary: "Gym", start: { dateTime: iso(slotStart + hour) }, end: { dateTime: iso(slotStart + 2 * hour) } },
 		],
 	};
