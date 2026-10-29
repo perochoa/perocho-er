@@ -6,15 +6,14 @@ import { site } from "../site";
 interface Props {
 	eyebrow: string;
 	title: string;
+	// Also the meta description.
 	text: string;
-	// Meta description; defaults to the text.
-	description?: string;
 }
 
-const { eyebrow, title, text, description = text } = Astro.props;
+const { eyebrow, title, text } = Astro.props;
 ---
 
-<BaseLayout title={`${title} · ${site.name}`} description={description} noindex>
+<BaseLayout title={`${title} · ${site.name}`} description={text} noindex>
 	<main class="wrap">
 		<p class="eyebrow">{eyebrow}</p>
 		<h1>{title}</h1>
