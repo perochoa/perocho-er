@@ -49,6 +49,7 @@ let calendars: Record<string, object[]>;
 let holds: { calendarId: string; body: any }[];
 let deleted: { calendarId: string; eventId: string }[];
 let mails: any[];
+let submissions: any[];
 let tokenRequests: number;
 let tokenLifetime: number; // seconds, as Google's expires_in
 // Another request's hold that lands on the same calendar right after ours is written, unseen by
@@ -77,6 +78,7 @@ beforeEach(() => {
 	holds = [];
 	deleted = [];
 	mails = [];
+	submissions = [];
 	tokenRequests = 0;
 	tokenLifetime = 3600;
 	resetTokenCache();
@@ -132,6 +134,7 @@ beforeEach(() => {
 				});
 			}
 			mails.push(body.methodCalls[0][1].create.draft);
+			submissions.push(body.methodCalls[1][1]);
 			return Response.json({
 				methodResponses: [
 					["Email/set", { created: { draft: { id: "e1" } } }, "email"],
@@ -143,7 +146,7 @@ beforeEach(() => {
 	};
 });
 
-const submit = (fields: Record<string, string>, headers: Record<string, string> = {}) => {
+const submit = (fields: Record<string, string>, headers: Record<string, string> = {}, overrides = {}) => {
 	const body = new URLSearchParams({
 		name: "Jane",
 		contact: "email",
@@ -154,7 +157,7 @@ const submit = (fields: Record<string, string>, headers: Record<string, string> 
 		visit: "drop-off",
 		...fields,
 	});
-	return worker.fetch(new Request("https://intake.test/request", { method: "POST", body, headers }), env);
+	return worker.fetch(new Request("https://intake.test/request", { method: "POST", body, headers }), { ...env, ...overrides });
 };
 
 test("lists only times when some tech is free", async () => {
@@ -389,4 +392,14 @@ test("doesn't count honeypot or invalid posts", async () => {
 	await submit({ website: "spam" });
 	await submit({ name: "" });
 	assert.deepEqual(limitKeys, []);
+});
+
+test("doesn't keep a Sent copy of mail to our own address", async () => {
+	await submit({});
+	assert.deepEqual(submissions[0].onSuccessDestroyEmail, ["#send"]);
+	assert.equal(submissions[0].onSuccessUpdateEmail, undefined);
+
+	await submit({}, {}, { MAIL_TO: "techs@example.com" });
+	assert.equal(submissions[1].onSuccessDestroyEmail, undefined);
+	assert.equal(submissions[1].onSuccessUpdateEmail["#send"]["mailboxIds/sent"], true);
 });

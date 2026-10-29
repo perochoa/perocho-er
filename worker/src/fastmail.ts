@@ -68,6 +68,9 @@ export async function sendMail(token: string, mail: Mail): Promise<void> {
 	const draftsId = firstId(drafts);
 	const sentId = firstId(sent);
 
+	// Mail to our own address arrives in the inbox anyway, so a Sent copy would sit beside it in the
+	// same thread and look like a duplicate; drop the draft once it's sent instead.
+	const toSelf = mail.to.toLowerCase() === identity.email.toLowerCase();
 	const [created, submitted] = await call([
 		[
 			"Email/set",
@@ -93,13 +96,17 @@ export async function sendMail(token: string, mail: Mail): Promise<void> {
 			{
 				accountId,
 				create: { send: { identityId: identity.id, emailId: "#draft" } },
-				onSuccessUpdateEmail: {
-					"#send": {
-						[`mailboxIds/${draftsId}`]: null,
-						[`mailboxIds/${sentId}`]: true,
-						"keywords/$draft": null,
-					},
-				},
+				...(toSelf
+					? { onSuccessDestroyEmail: ["#send"] }
+					: {
+							onSuccessUpdateEmail: {
+								"#send": {
+									[`mailboxIds/${draftsId}`]: null,
+									[`mailboxIds/${sentId}`]: true,
+									"keywords/$draft": null,
+								},
+							},
+						}),
 			},
 			"submission",
 		],
