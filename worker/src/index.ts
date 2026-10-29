@@ -7,7 +7,7 @@
 //   POST /offers/<token> those buttons
 // and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time.
 
-import { MailError, sendMail } from "./fastmail.ts";
+import { sendMail } from "./fastmail.ts";
 import { accessToken, createEvent, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
@@ -67,7 +67,7 @@ async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS))
 
 async function slots(env: Env, origin: string | null, ip: string | null): Promise<Response> {
 	// Each fetch costs a Google call per tech, so cap it per visitor. The form treats any non-OK
-	// response as "no times online" and falls back to the notes.
+	// response as no times to pick, and points people to Messenger and email instead.
 	const { success } = await env.SLOTS_LIMITER.limit({ key: ip ?? "unknown" });
 	if (!success) {
 		console.warn("rate limited /slots");
@@ -186,34 +186,30 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 	const offers: Offer[] = techs.map((tech) => ({ token: crypto.randomUUID(), tech, holdId: null }));
 	const link = (offer: Offer) => `${origin}/offers/${offer.token}`;
 
-	let slot: Slot | null = null;
-	let token: string | null = null;
-	if (intake.slot !== null) {
-		token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
-		slot = (await findSlots(env, token, techs)).slots.find((s) => s.start === intake.slot) ?? null;
-		if (!slot) return "taken";
+	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+	const slot = (await findSlots(env, token, techs)).slots.find((s) => s.start === intake.slot);
+	if (!slot) return "taken";
 
-		// Every tech free then gets a hold, so they can all plan around it until one takes it.
-		const held = await Promise.allSettled(
-			slot.techs.map((i) => hold(env, token!, offers[i], slot!, intake, link(offers[i]))),
-		);
-		held.forEach((result, i) => {
-			if (result.status === "fulfilled") offers[slot!.techs[i]].holdId = result.value;
-			else console.error(result.reason);
-		});
-		if (!offers.some((offer) => offer.holdId)) {
-			// Lost every race means taken; anything else is a failure.
-			const failure = held.find((result) => result.status === "rejected");
-			if (failure) throw failure.reason;
-			return "taken";
-		}
+	// Every tech free then gets a hold, so they can all plan around it until one takes it.
+	const held = await Promise.allSettled(
+		slot.techs.map((i) => hold(env, token, offers[i], slot, intake, link(offers[i]))),
+	);
+	held.forEach((result, i) => {
+		if (result.status === "fulfilled") offers[slot.techs[i]].holdId = result.value;
+		else console.error(result.reason);
+	});
+	if (!offers.some((offer) => offer.holdId)) {
+		// Lost every race means taken; anything else is a failure.
+		const failure = held.find((result) => result.status === "rejected");
+		if (failure) throw failure.reason;
+		return "taken";
 	}
 
 	const id = crypto.randomUUID();
 	const db = env.DB;
 	const rows = [
 		db.prepare("INSERT INTO requests (id, created, intake, slot_start, slot_end) VALUES (?, ?, ?, ?, ?)")
-			.bind(id, Date.now(), JSON.stringify(intake), slot?.start ?? null, slot?.end ?? null),
+			.bind(id, Date.now(), JSON.stringify(intake), slot.start, slot.end),
 		...offers.map((offer, position) =>
 			db.prepare(
 				"INSERT INTO offers (token, request_id, position, name, email, calendar_id, hold_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -225,11 +221,11 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 		await db.batch(rows);
 	} catch (error) {
 		// Without the rows the links lead nowhere, so let the holds go too.
-		await Promise.allSettled(holds.map((offer) => deleteEvent(token!, offer.tech.calendarId, offer.holdId!)));
+		await Promise.allSettled(holds.map((offer) => deleteEvent(token, offer.tech.calendarId, offer.holdId!)));
 		throw error;
 	}
 
-	const time = slot && formatTime(slot.start, env.TIME_ZONE);
+	const time = formatTime(slot.start, env.TIME_ZONE);
 	const offered = offers.map((offer) => ({
 		name: offer.tech.name,
 		email: offer.tech.email ?? offer.tech.calendarId,
@@ -246,17 +242,9 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 			].map((mail) => ({ from: env.MAIL_FROM, ...mail })),
 		);
 	} catch (error) {
-		// Without a hold the emails were the only way the techs would hear of it, so if none went out
-		// it's as if it never came in. With a hold, its description has every detail and the tech's
-		// link, and sending them to "failed" would make a retry find their own hold and say "taken".
-		// Once some went out, their links have to keep working.
-		if (holds.length === 0 && !(error instanceof MailError && error.sent)) {
-			await db.batch([
-				db.prepare("DELETE FROM offers WHERE request_id = ?").bind(id),
-				db.prepare("DELETE FROM requests WHERE id = ?").bind(id),
-			]);
-			throw error;
-		}
+		// There's always a hold by now, and its description has every detail and the tech's link.
+		// Sending them to "failed" would make a retry find their own hold and say "taken", and any
+		// emails that did go out need their links to keep working.
 		console.error(error);
 	}
 	return "sent";

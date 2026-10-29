@@ -200,8 +200,9 @@ const submit = (fields: Record<string, string>, headers: Record<string, string> 
 		email: "jane@example.com",
 		service: "PS5 deep cleaning",
 		device: "PS5 disc",
+		phone: "(416) 555-0123",
 		problem: "Loud fan",
-		visit: "drop-off",
+		slot: iso(slotStart),
 		...fields,
 	});
 	return worker.fetch(new Request("https://intake.test/request", { method: "POST", body, headers }), { ...env, ...overrides });
@@ -295,12 +296,18 @@ test("holds the time on every tech who's free then", async () => {
 	assert.deepEqual(offers.map((o: any) => [o.name, o.hold_id]), [["Richard", "hold1"], ["Sam", "hold2"]]);
 });
 
-test("sends a request without a time to every tech, holding nothing", async () => {
-	const response = await submit({});
-	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
-	assert.equal(holds.length, 0);
-	assert.match(text(to("richard@example.com")[0]), /None picked/);
-	assert.equal(to("sam@example.com").length, 1);
+test("turns away a request without a time before calling Google or Fastmail", async () => {
+	const response = await submit({ slot: "" });
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
+	assert.deepEqual(fetches, []);
+	assert.deepEqual(limitKeys, []);
+});
+
+test("gives the phone number in every summary", async () => {
+	await submit({});
+	for (const mail of mails) assert.match(text(mail), /\nPhone: \(416\) 555-0123\n/);
+	assert.match(holds[0].body.description, /Phone: \(416\) 555-0123/);
+	assert.match(text(to("sam@example.com")[0]), /Drop-off time: /);
 });
 
 test("emails a tech at their email when TECHS gives one", async () => {
@@ -378,25 +385,22 @@ test("gets a new token within 5 minutes of expiry", async () => {
 	assert.equal(tokenRequests, 2);
 });
 
-for (const [label, fields] of [
-	["with a time", { slot: iso(slotStart) }],
-	["without a time", {}],
-] as const) {
-	test(`the same request sent twice ${label} is filed once`, async () => {
-		const first = await submit(fields);
-		const sent = mails.length;
-		const second = await submit(fields);
-		for (const response of [first, second]) {
-			assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
-		}
-		assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 1);
-		assert.equal(mails.length, sent);
-	});
-}
+test("the same request sent twice is filed once", async () => {
+	const first = await submit({});
+	const sent = mails.length;
+	const second = await submit({});
+	for (const response of [first, second]) {
+		assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	}
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 1);
+	assert.equal(mails.length, sent);
+});
 
 test("the same request sent again a while later is a new one", async () => {
 	await submit({});
 	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - hour);
+	// Its hold gone (declined, say), so the time is free again.
+	calendars["sam@example.com"] = calendars["sam@example.com"].filter((e: any) => !e.id);
 	await submit({});
 	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 2);
 });
@@ -439,29 +443,6 @@ test("sends people to the failure page when a service is down", async () => {
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
 	// The techs never heard of it, so it isn't kept.
 	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 0);
-});
-
-test("keeps a request without a time when only some of its emails went out", async () => {
-	const fake = globalThis.fetch;
-	// Fastmail turns down the first submission (Richard's) and sends the rest.
-	globalThis.fetch = async (input, init) => {
-		const response = await fake(input, init);
-		if (String(input) !== "https://api.fastmail.com/jmap/api/" || !String(init?.body).includes("EmailSubmission/set")) {
-			return response;
-		}
-		const json: any = await response.json();
-		const submission = json.methodResponses[1][1];
-		delete submission.created.send0;
-		submission.notCreated = { send0: { type: "forbiddenToSend" } };
-		return Response.json(json);
-	};
-	const original = console.error;
-	console.error = () => {};
-	const response = await submit({});
-	console.error = original;
-	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
-	assert.equal(status(), "pending");
-	assert.equal((await offerPage(linkFor("sam@example.com"))).status, 200);
 });
 
 test("emails the customer when their request fails", async () => {
@@ -516,7 +497,7 @@ test("counts each valid post against the visitor's IP", async () => {
 	assert.deepEqual(limitKeys, ["203.0.113.7"]);
 
 	// Nobody is emailed, the customer included: the form mustn't be a way to flood an inbox.
-	const second = await quietly(() => submit({}, { "CF-Connecting-IP": "203.0.113.7" }));
+	const second = await quietly(() => submit({ name: "Bob" }, { "CF-Connecting-IP": "203.0.113.7" }));
 	assert.equal(second.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
 	assert.equal(mails.length, 4);
 });
@@ -529,6 +510,7 @@ test("shares one count between posts without a visitor IP", async () => {
 test("doesn't count honeypot or invalid posts", async () => {
 	await submit({ website: "spam" });
 	await submit({ name: "" });
+	await submit({ phone: "555-0123" });
 	assert.deepEqual(limitKeys, []);
 });
 
@@ -555,6 +537,7 @@ test("shows a tech the request without changing anything", async () => {
 	const body = await response.text();
 	assert.match(body, /New repair request/);
 	assert.match(body, /Loud fan/);
+	assert.match(body, /<a href="tel:4165550123">Call Jane: \(416\) 555-0123<\/a>/);
 	assert.match(body, /<form method="post">/);
 	assert.match(body, /value="confirm"/);
 	assert.match(body, /value="decline"/);
@@ -632,10 +615,22 @@ test("a tech without a hold gets the booking created when they take it", async (
 	assert.deepEqual(deleted, [{ calendarId: "sam@example.com", eventId: "hold1" }]);
 });
 
-test("taking a request without a time touches no calendar", async () => {
-	await submit({});
-	const sam = linkFor("sam@example.com");
-	mails = [];
+// A request filed before times and phones were required: no slot, no phone, and a `visit`.
+const legacy = () => {
+	const intake = { name: "Jane", email: "jane@example.com", service: "", device: "PS5", problem: "Loud fan", visit: "house-call", slot: null, notes: "" };
+	db.sqlite.prepare("INSERT INTO requests (id, created, intake) VALUES ('old', ?, ?)").run(Date.now(), JSON.stringify(intake));
+	const token = "00000000-0000-4000-8000-000000000001";
+	db.sqlite
+		.prepare("INSERT INTO offers (token, request_id, position, name, email, calendar_id) VALUES (?, 'old', 0, 'Sam', 'sam@example.com', 'sam@example.com')")
+		.run(token);
+	return `https://intake.test/offers/${token}`;
+};
+
+test("shows and takes a request from before times were required, touching no calendar", async () => {
+	const sam = legacy();
+	const body = await (await offerPage(sam)).text();
+	assert.match(body, /New repair request/);
+	assert.ok(!body.includes("tel:") && !/house/i.test(body));
 	await press(sam, "confirm");
 	assert.equal(status(), "confirmed");
 	assert.equal(holds.length + patched.length + deleted.length, 0);
@@ -805,8 +800,8 @@ test("the hourly job deletes another tech's hold that couldn't be deleted when o
 	assert.ok(calendars["sam@example.com"].some((e: any) => e.id === "hold2"));
 });
 
-test("expires a request without a time after a week", async () => {
-	await submit({});
+test("expires a request from before times were required after a week", async () => {
+	legacy();
 	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - 6 * 24 * hour);
 	await tick();
 	assert.equal(status(), "pending");
