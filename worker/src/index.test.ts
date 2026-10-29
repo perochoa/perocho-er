@@ -19,7 +19,7 @@ const env = {
 	TIME_ZONE: "America/Toronto",
 	SLOT_MINUTES: 60,
 	LEAD_HOURS: 2,
-	DAYS_AHEAD: 14,
+	DAYS_AHEAD: 31,
 	DEV_ORIGINS: "",
 	TECHS: JSON.stringify([
 		{ name: "Richard", calendarId: "richard@example.com" },
