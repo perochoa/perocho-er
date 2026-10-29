@@ -18,7 +18,17 @@ const base64url = (bytes: ArrayBuffer | Uint8Array) =>
 
 const encodeJson = (value: unknown) => base64url(new TextEncoder().encode(JSON.stringify(value)));
 
+// Tokens last an hour; reuse one until 5 minutes before it expires. Module scope lives as long as
+// the isolate, so this saves the signing and token exchange on most requests. Keyed on the key
+// JSON so a rotated service account gets a new token.
+let cached: { account: string; token: string; exp: number } | null = null;
+
+export const resetTokenCache = () => {
+	cached = null;
+};
+
 export async function accessToken(serviceAccountJson: string): Promise<string> {
+	if (cached?.account === serviceAccountJson && Date.now() < cached.exp - 300_000) return cached.token;
 	const account: ServiceAccount = JSON.parse(serviceAccountJson);
 	const pem = account.private_key.replace(/-----[^-]+-----|\s/g, "");
 	const key = await crypto.subtle.importKey(
@@ -50,7 +60,12 @@ export async function accessToken(serviceAccountJson: string): Promise<string> {
 		}),
 	});
 	if (!response.ok) throw new Error(`google token: ${response.status} ${await response.text()}`);
-	return ((await response.json()) as { access_token: string }).access_token;
+	const { access_token, expires_in } = (await response.json()) as {
+		access_token: string;
+		expires_in: number;
+	};
+	cached = { account: serviceAccountJson, token: access_token, exp: Date.now() + expires_in * 1000 };
+	return access_token;
 }
 
 interface GoogleEvent {

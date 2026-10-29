@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
 import { beforeEach, test } from "node:test";
+import { resetTokenCache } from "./google.ts";
 import worker from "./index.ts";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -34,6 +35,8 @@ const iso = (ms: number) => new Date(ms).toISOString();
 let calendars: Record<string, object[]>;
 let holds: { calendarId: string; body: any }[];
 let mails: any[];
+let tokenRequests: number;
+let tokenLifetime: number; // seconds, as Google's expires_in
 
 beforeEach(() => {
 	// Richard is busy at the slot; Sam is free. Both are busy the hour after.
@@ -47,12 +50,16 @@ beforeEach(() => {
 	};
 	holds = [];
 	mails = [];
+	tokenRequests = 0;
+	tokenLifetime = 3600;
+	resetTokenCache();
 
 	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = new URL(String(input));
 		const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
 		if (url.href === "https://oauth2.googleapis.com/token") {
-			return Response.json({ access_token: "google-token" });
+			tokenRequests++;
+			return Response.json({ access_token: "google-token", expires_in: tokenLifetime });
 		}
 		const calendar = url.pathname.match(/\/calendars\/([^/]+)\/events$/);
 		if (calendar) {
@@ -175,6 +182,32 @@ test("drops honeypot submissions quietly", async () => {
 	const response = await submit({ website: "spam" });
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
 	assert.equal(mails.length, 0);
+});
+
+const getSlots = () => worker.fetch(new Request("https://intake.test/slots"), env);
+
+test("reuses the Google token across requests", async () => {
+	await getSlots();
+	await submit({ slot: iso(slotStart) });
+	assert.equal(tokenRequests, 1);
+});
+
+test("gets a new token within 5 minutes of expiry", async () => {
+	tokenLifetime = 299;
+	await getSlots();
+	await getSlots();
+	assert.equal(tokenRequests, 2);
+});
+
+test("re-reads the calendars on submit, not what /slots last saw", async () => {
+	await getSlots();
+	calendars["sam@example.com"].push({
+		start: { dateTime: iso(slotStart) },
+		end: { dateTime: iso(slotStart + hour) },
+	});
+	const response = await submit({ slot: iso(slotStart) });
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/taken/");
+	assert.equal(holds.length, 0);
 });
 
 test("sends people to the failure page when a service is down", async () => {
