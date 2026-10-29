@@ -169,7 +169,17 @@ async function hold(env: Env, token: string, offer: Offer, slot: Slot, intake: I
 	return ours.id;
 }
 
+// How long the same form sent again counts as the request already filed.
+const REPEAT_MS = 10 * 60_000;
+
 async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> {
+	// A double press, or the form sent again from the back button, is the request already filed:
+	// filing it again would find its own hold and say "taken", or email everyone twice.
+	const repeat = await env.DB.prepare("SELECT 1 FROM requests WHERE intake = ? AND created > ?")
+		.bind(JSON.stringify(intake), Date.now() - REPEAT_MS)
+		.first();
+	if (repeat) return "sent";
+
 	const techs = parseTechs(env.TECHS);
 	const offers: Offer[] = techs.map((tech) => ({ token: crypto.randomUUID(), tech, holdId: null }));
 	const link = (offer: Offer) => `${origin}/offers/${offer.token}`;

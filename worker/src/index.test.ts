@@ -378,6 +378,29 @@ test("gets a new token within 5 minutes of expiry", async () => {
 	assert.equal(tokenRequests, 2);
 });
 
+for (const [label, fields] of [
+	["with a time", { slot: iso(slotStart) }],
+	["without a time", {}],
+] as const) {
+	test(`the same request sent twice ${label} is filed once`, async () => {
+		const first = await submit(fields);
+		const sent = mails.length;
+		const second = await submit(fields);
+		for (const response of [first, second]) {
+			assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+		}
+		assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 1);
+		assert.equal(mails.length, sent);
+	});
+}
+
+test("the same request sent again a while later is a new one", async () => {
+	await submit({});
+	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - hour);
+	await submit({});
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 2);
+});
+
 test("re-reads the calendars on submit, not what /slots last saw", async () => {
 	await getSlots();
 	calendars["sam@example.com"].push({
