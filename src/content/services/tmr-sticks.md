@@ -11,5 +11,4 @@ We replace them with **TMR sticks**, which sense position magnetically instead o
 rub and wear down, so they don't drift from wear like the originals.
 
 - Installed and tested before you get it back, usually **within an hour**.
-- Drop it off, or we come to you and fix it on the spot.
 - Have more than one controller? Fixing 4 or more sticks drops the price to $20 each.
