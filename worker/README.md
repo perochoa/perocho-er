@@ -80,3 +80,19 @@ DEV_ORIGINS=http://localhost:4321
 ```
 
 Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed.
+
+## Spam
+
+Two defences, neither needing JS:
+
+- **Honeypot.** A hidden `website` field people never see. A post that fills it gets the "sent"
+  page and nothing else happens.
+- **Rate limit.** Each visitor IP (`CF-Connecting-IP`) gets **3 valid posts a minute**; past that
+  they land on the "didn't go through" page and nothing is held or emailed. Honeypot and invalid
+  posts don't count, since they cost nothing. Three covers a first try plus a couple of retries
+  after "that time was just taken"; a real person doesn't send more than that in a minute.
+
+  Change it in `ratelimits` in `wrangler.jsonc` (`limit`, and `period` of 10 or 60 seconds), then
+  `npm run types` and deploy. Cloudflare counts per location and only roughly, so a bot spread
+  over many IPs or locations can still get through; add Turnstile if that starts happening.
+  Over-limit posts show up in the worker's logs as `rate limited a request`.
