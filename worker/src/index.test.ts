@@ -152,6 +152,7 @@ beforeEach(() => {
 		const calendar = url.pathname.match(/\/calendars\/([^/]+)\/events$/);
 		if (calendar) {
 			const calendarId = decodeURIComponent(calendar[1]);
+			if (!calendars[calendarId]) return new Response("Not Found", { status: 404 });
 			if (init?.method === "POST") {
 				holds.push({ calendarId, body });
 				const ours = { id: `hold${holds.length}`, created: new Date().toISOString() };
@@ -606,4 +607,32 @@ test("a tech who declined can still take it while it's open", async () => {
 	// His hold went when he declined, so the booking is a new event.
 	assert.equal(holds.at(-1)!.calendarId, "richard@example.com");
 	assert.equal(holds.at(-1)!.body.status, "confirmed");
+});
+
+test("one unreadable calendar costs only that tech their times", async () => {
+	const errors: unknown[] = [];
+	const original = console.error;
+	console.error = (message) => errors.push(message);
+	const TECHS = JSON.stringify([
+		{ name: "Typo", calendarId: "nobody@example.com" },
+		{ name: "Sam", calendarId: "sam@example.com" },
+	]);
+	const response = await slotsFrom("https://repairs.perocho.com", { TECHS });
+	const submitted = await submit({ slot: iso(slotStart) }, {}, { TECHS });
+	console.error = original;
+
+	assert.equal(response.status, 200);
+	const { slots } = (await response.json()) as { slots: { start: string }[] };
+	assert.ok(slots.some((s) => s.start === iso(slotStart)));
+	assert.equal(submitted.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.deepEqual(holds.map((hold) => hold.calendarId), ["sam@example.com"]);
+	assert.ok(errors.some((e) => String(e).includes("can't read Typo's calendar")));
+});
+
+test("fails when no calendar can be read", async () => {
+	const original = console.error;
+	console.error = () => {};
+	const response = await slotsFrom("https://repairs.perocho.com", { TECHS: JSON.stringify([{ name: "Typo", calendarId: "nobody@example.com" }]) });
+	console.error = original;
+	assert.equal(response.status, 500);
 });

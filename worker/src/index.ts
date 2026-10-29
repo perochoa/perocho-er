@@ -50,9 +50,17 @@ async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS))
 		daysAhead: env.DAYS_AHEAD,
 	};
 	const to = options.now + options.daysAhead * 86_400_000;
-	const events = await Promise.all(
+	// A calendar that can't be read (unshared, or a wrong calendarId in TECHS) costs that tech their
+	// times, not everyone's. The log names the tech; only when no calendar can be read is it an error.
+	const results = await Promise.allSettled(
 		techs.map((tech) => listEvents(token, tech.calendarId, options.now, to)),
 	);
+	const events = results.map((result, i) => {
+		if (result.status === "fulfilled") return result.value;
+		console.error(`can't read ${techs[i].name}'s calendar; check their calendarId in TECHS and that it's shared`, result.reason);
+		return [];
+	});
+	if (results.every((result) => result.status === "rejected")) throw new Error("no tech's calendar could be read");
 	return { techs, slots: openSlots(events, options) };
 }
 
