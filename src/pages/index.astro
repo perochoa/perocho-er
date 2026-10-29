@@ -28,9 +28,12 @@ const facts = [
 ];
 
 const steps = [
-	site.intakeUrl
-		? { title: "Request a repair", text: "Fill in our form, or message us on Messenger or by email." }
-		: { title: "Message us", text: "On Messenger or by email, about your device." },
+	{
+		title: "Request a repair",
+		text: site.intakeUrl
+			? "Fill in our form, or message us on Messenger or by email."
+			: "Message us on Messenger or by email, about your device.",
+	},
 	{ title: "Get a quote", text: "We reply with a price and agree on a time." },
 	{ title: "Drop it off", text: "Or we come to you." },
 	{ title: "Pay when it's done", text: "By cash or Interac e-Transfer." },
@@ -165,13 +168,14 @@ const steps = [
 						<p class="eyebrow">Contact</p>
 						<h2 id="contact-title">Tell us what's wrong</h2>
 						<p>
+							<a href={site.messengerUrl}>Message us on Messenger</a> or email{" "}
+							<a href={`mailto:${site.email}`}>{site.email}</a>
 							{site.intakeUrl && (
 								<>
-									<a href="/request/">Send us a repair request</a>,{" "}
+									, or <a href="/request/">send us a repair request</a>
 								</>
 							)}
-							<a href={site.messengerUrl}>{site.intakeUrl ? "message" : "Message"} us on Messenger</a> or email{" "}
-							<a href={`mailto:${site.email}`}>{site.email}</a>.{" "}
+							.{" "}
 							{
 								site.marketplace && (
 									<>
