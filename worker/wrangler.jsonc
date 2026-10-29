@@ -4,7 +4,12 @@
 	"main": "src/index.ts",
 	"compatibility_date": "2026-10-01",
 	"observability": { "enabled": true },
-	// Secrets, set with `npx wrangler secret put <NAME>`: TECHS, GOOGLE_SERVICE_ACCOUNT, FASTMAIL_TOKEN.
+	// Set with `npx wrangler secret put <NAME>`; tech names and calendar IDs stay out of the public repo.
+	//   TECHS                   [{"name": "Richard", "calendarId": "richard@gmail.com"}, ...]
+	//   GOOGLE_SERVICE_ACCOUNT  the service account's JSON key
+	//   FASTMAIL_TOKEN          API token with Email and Email submission access
+	// Listing them here types them in worker-configuration.d.ts and makes deploy fail if one is unset.
+	"secrets": { "required": ["TECHS", "GOOGLE_SERVICE_ACCOUNT", "FASTMAIL_TOKEN"] },
 	"vars": {
 		"SITE_URL": "https://repairs.perocho.com",
 		"MAIL_FROM": "contact@perocho.com",
