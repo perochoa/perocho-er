@@ -57,11 +57,35 @@ const { requestHref = "/request/" } = Astro.props;
 		return length > 1 ? { x: v.x / length, y: v.y / length } : v;
 	};
 
-	// A few slow sines that never quite repeat: reads as wear, not as a loop.
-	const wander = (t: number): Vec => ({
-		x: BASE.x + 0.035 * Math.sin(t * 0.41) + 0.02 * Math.sin(t * 1.07 + 1.3),
-		y: BASE.y + 0.03 * Math.sin(t * 0.53 + 2.1) + 0.02 * Math.sin(t * 0.89 + 0.4),
-	});
+	// Every few seconds the worn spring gives: a quick slip further out along the drift that eases back.
+	const SLIP_EVERY = 4.5;
+	const hash = (n: number) => {
+		const s = Math.sin(n * 127.1) * 43758.5453;
+		return s - Math.floor(s);
+	};
+	const slip = (t: number) => {
+		const n = Math.floor(t / SLIP_EVERY);
+		let sum = 0;
+		// The previous slip may still be easing back when the next one starts.
+		for (const i of [n - 1, n]) {
+			const age = t - (i * SLIP_EVERY + hash(i) * 2.5);
+			if (age < 0) continue;
+			const strength = 0.14 + 0.14 * hash(i + 0.5);
+			sum += strength * Math.min(age / 0.2, 1) * Math.exp(-Math.max(age - 0.2, 0) * 1.2);
+		}
+		return sum;
+	};
+
+	// A few slow sines that never quite repeat, plus the slips: reads as wear, not as a loop. Mostly
+	// along the drift (toward the worn ring), a little across it. Big enough to see on a phone.
+	const wander = (t: number): Vec => {
+		const along = 0.07 * Math.sin(t * 0.41) + 0.04 * Math.sin(t * 1.07 + 1.3) + slip(t);
+		const across = 0.04 * Math.sin(t * 0.53 + 2.1) + 0.025 * Math.sin(t * 0.89 + 0.4);
+		return {
+			x: BASE.x + (along - across) * Math.SQRT1_2,
+			y: BASE.y + (along + across) * Math.SQRT1_2,
+		};
+	};
 
 	function setup(root: HTMLElement) {
 		const svg = root.querySelector<SVGSVGElement>("svg")!;
@@ -105,8 +129,9 @@ const { requestHref = "/request/" } = Astro.props;
 
 		const draw = () => {
 			stick.setAttribute("transform", `translate(${pos.x * MAX} ${-pos.y * MAX})`);
-			const ex = rest.x * MAX * WORN_REACH;
-			const ey = -rest.y * MAX * WORN_REACH;
+			// The wear mark stays put while the stick wanders; it fades out once fixed.
+			const ex = BASE.x * MAX * WORN_REACH;
+			const ey = -BASE.y * MAX * WORN_REACH;
 			worn.setAttribute("cx", String(C + ex));
 			worn.setAttribute("cy", String(C + ey));
 			// Same bow as the static drawing's trail, turned to follow the drift.
@@ -138,7 +163,7 @@ const { requestHref = "/request/" } = Astro.props;
 					vel = { x: 0, y: 0 };
 				} else {
 					// A firm, slightly bouncy spring after a release; a slow, damped one for the creep.
-					const k = userActive ? 170 : 6;
+					const k = userActive ? 170 : 9;
 					const c = 2 * Math.sqrt(k) * (userActive ? 0.6 : 1);
 					vel.x += (k * (target.x - pos.x) - c * vel.x) * dt;
 					vel.y += (k * (target.y - pos.y) - c * vel.y) * dt;
@@ -227,9 +252,9 @@ const { requestHref = "/request/" } = Astro.props;
 			root.classList.add("is-fixed");
 			status.querySelector("[data-status-text]")!.textContent = "Drift fixed. Most fixes take about an hour.";
 			status.querySelector("a")?.removeAttribute("hidden");
-			// The button is going away; don't drop keyboard focus on the floor.
+			// The button is going away (it keeps its space, so nothing shifts); don't drop keyboard
+			// focus on the floor.
 			if (document.activeElement === button) status.focus();
-			button.hidden = true;
 			window.dispatchEvent(new CustomEvent("joystick:fixed"));
 			schedule();
 		});
@@ -318,8 +343,15 @@ const { requestHref = "/request/" } = Astro.props;
 			stroke-width: 6;
 		}
 	}
-	.fix {
+	/* The button and the status share a cell, and the status keeps room for its two lines, so the
+	   swap on fix doesn't move anything. */
+	.fix,
+	.status {
+		grid-area: 2 / 1;
 		margin-top: 1rem;
+	}
+	.fix {
+		align-self: start;
 		padding: 0.375rem 0.875rem;
 		border: 1px solid var(--line);
 		border-radius: 999px;
@@ -336,15 +368,23 @@ const { requestHref = "/request/" } = Astro.props;
 	.fix[hidden] {
 		display: none;
 	}
+	.is-fixed .fix {
+		visibility: hidden;
+	}
 	.status {
-		margin: 0;
+		align-self: start;
+		width: 100%;
+		min-height: 2lh;
+		margin-bottom: 0;
 		font-family: var(--font-mono);
 		font-size: 0.8125rem;
 		color: var(--muted);
 		text-align: center;
+		text-wrap: balance;
 	}
-	.is-fixed .status {
-		margin-top: 1rem;
+	/* Empty until the fix, and it sits over the button. */
+	.joystick:not(.is-fixed) .status {
+		pointer-events: none;
 	}
 	.status:focus {
 		outline: none;
@@ -358,15 +398,14 @@ const { requestHref = "/request/" } = Astro.props;
 			animation: none;
 		}
 	}
+	/* Under the intro, centred: big enough for a thumb, small enough that the hero stays short. The
+	   status gets the full width so it fits on two lines. */
 	@media (max-width: 48rem) {
 		.joystick {
-			max-width: 13rem;
-			order: -1;
-			justify-self: start;
-			justify-items: start;
+			max-width: none;
 		}
-		.status {
-			text-align: start;
+		.drift {
+			max-width: 14rem;
 		}
 	}
 </style>
