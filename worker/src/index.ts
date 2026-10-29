@@ -4,24 +4,11 @@
 //                  then redirects back to the site (the form works without JS)
 
 import { sendMail } from "./fastmail.ts";
-import { accessToken, createHold, listEvents } from "./google.ts";
+import { accessToken, createHold, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
 import { describe, formatTime, parseIntake, replyTo, subject } from "./intake.ts";
-import { openSlots, parseWorkHours } from "./slots.ts";
+import { blocks, openSlots, parseWorkHours } from "./slots.ts";
 
-interface Env {
-	SITE_URL: string;
-	MAIL_FROM: string;
-	MAIL_TO: string;
-	TIME_ZONE: string;
-	WORK_HOURS: string; // "09:00-17:00", every day
-	SLOT_MINUTES: string;
-	LEAD_HOURS: string;
-	DAYS_AHEAD: string;
-	// Secrets (wrangler secret put): tech names and calendar IDs stay out of the public repo.
-	TECHS: string; // [{"name": "Richard", "calendarId": "richard@gmail.com"}, ...]
-	GOOGLE_SERVICE_ACCOUNT: string; // the service account's JSON key
-	FASTMAIL_TOKEN: string; // API token with Email and Email submission access
-}
+// Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
 interface Tech {
 	name: string;
@@ -32,9 +19,9 @@ async function findSlots(env: Env, token: string) {
 	const techs: Tech[] = JSON.parse(env.TECHS);
 	const options = {
 		now: Date.now(),
-		slotMinutes: Number(env.SLOT_MINUTES),
-		leadHours: Number(env.LEAD_HOURS),
-		daysAhead: Number(env.DAYS_AHEAD),
+		slotMinutes: env.SLOT_MINUTES,
+		leadHours: env.LEAD_HOURS,
+		daysAhead: env.DAYS_AHEAD,
 		workHours: parseWorkHours(env.WORK_HOURS),
 		timeZone: env.TIME_ZONE,
 	};
@@ -46,10 +33,13 @@ async function findSlots(env: Env, token: string) {
 }
 
 async function slots(env: Env, origin: string | null): Promise<Response> {
-	const allowed = [env.SITE_URL, "http://localhost:4321"];
+	const allowed = [env.SITE_URL, ...env.DEV_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)];
 	const { slots } = await findSlots(env, await accessToken(env.GOOGLE_SERVICE_ACCOUNT));
 	return Response.json(
-		{ slots: slots.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })) },
+		{
+			timeZone: env.TIME_ZONE,
+			slots: slots.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })),
+		},
 		{
 			headers: {
 				"Access-Control-Allow-Origin": origin && allowed.includes(origin) ? origin : env.SITE_URL,
@@ -60,10 +50,23 @@ async function slots(env: Env, origin: string | null): Promise<Response> {
 	);
 }
 
-async function request(env: Env, form: FormData): Promise<string> {
+// Whether `event` was written before our hold. Ties on `created` fall back to the id, so two
+// racing requests always agree on which of them came first.
+const before = (event: ListedEvent, hold: { id: string; created: number }) =>
+	event.created < hold.created || (event.created === hold.created && event.id < hold.id);
+
+async function request(env: Env, form: FormData, ip: string | null): Promise<string> {
 	const parsed = parseIntake(form);
 	if (!parsed.ok) return parsed.spam ? "sent" : "failed";
 	const { intake } = parsed;
+
+	// Only a valid post costs Google and Fastmail calls, so only those count; honeypot bots keep
+	// seeing "sent". Without the header (local dev) every visitor shares one count.
+	const { success } = await env.REQUEST_LIMITER.limit({ key: ip ?? "unknown" });
+	if (!success) {
+		console.warn("rate limited a request");
+		return "failed";
+	}
 
 	let time: string | null = null;
 	let tech: Tech | null = null;
@@ -76,22 +79,54 @@ async function request(env: Env, form: FormData): Promise<string> {
 		// First free tech in the TECHS order takes it; the techs can swap it between them.
 		tech = found.techs[slot.techs[0]];
 		time = formatTime(slot.start, env.TIME_ZONE);
-		await createHold(token, tech.calendarId, {
+		const hold = await createHold(token, tech.calendarId, {
 			summary: `Request: ${intake.service || intake.device} (${intake.name})`,
 			description: `${describe(intake, time, tech.name)}\n\nConfirm by renaming this event; delete it to free the time.`,
 			start: slot.start,
 			end: slot.end,
 			timeZone: env.TIME_ZONE,
 		});
+
+		// Two requests for one slot can both get past the check above and both write a hold, so look
+		// again now that ours is written: if anything else blocking the slot came first, give it up.
+		// That covers any event, not only other requests' holds, so it doesn't rely on their titles.
+		// Losing means "taken" rather than trying the next free tech: it's rare, and they pick again
+		// from a fresh list.
+		try {
+			const events = await listEvents(token, tech.calendarId, slot.start, slot.end);
+			const lost = events.some(
+				(event) =>
+					event.id !== hold.id &&
+					blocks(event) &&
+					event.start < slot.end &&
+					event.end > slot.start &&
+					before(event, hold),
+			);
+			if (lost) {
+				await deleteEvent(token, tech.calendarId, hold.id);
+				return "taken";
+			}
+		} catch (error) {
+			// Our hold is written, so carry on and send the email; at worst the techs see two holds.
+			console.error(error);
+		}
 	}
 
-	await sendMail(env.FASTMAIL_TOKEN, {
-		from: env.MAIL_FROM,
-		to: env.MAIL_TO,
-		replyTo: replyTo(intake),
-		subject: subject(intake, time),
-		text: describe(intake, time, tech?.name ?? null),
-	});
+	try {
+		await sendMail(env.FASTMAIL_TOKEN, {
+			from: env.MAIL_FROM,
+			to: env.MAIL_TO,
+			replyTo: replyTo(intake),
+			subject: subject(intake, time),
+			text: describe(intake, time, tech?.name ?? null),
+		});
+	} catch (error) {
+		// Without a hold the email is the only copy of the request, so it failed. With one, the
+		// hold's description already has every detail, and sending them to "failed" would make a
+		// retry find their own hold and say "taken".
+		if (!tech) throw error;
+		console.error(error);
+	}
 	return "sent";
 }
 
@@ -103,7 +138,7 @@ export default {
 				return await slots(env, req.headers.get("Origin"));
 			}
 			if (req.method === "POST" && pathname === "/request") {
-				const outcome = await request(env, await req.formData());
+				const outcome = await request(env, await req.formData(), req.headers.get("CF-Connecting-IP"));
 				return Response.redirect(`${env.SITE_URL}/request/${outcome}/`, 303);
 			}
 			return new Response("Not found", { status: 404 });
