@@ -143,7 +143,9 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const none = form.querySelector<HTMLInputElement>("[name=slot][value='']")!;
 		const chosen = () => form.querySelector<HTMLInputElement>("[name=slot]:checked") ?? none;
 
-		// One week of day buttons at a time; the arrows step through the weeks that have times.
+		// Seven day buttons at a time. The first week starts today, so it shows a full seven days; the
+		// arrows step through the Sunday-to-Saturday weeks after it that have times.
+		const inWeek = (date: string, start: string) => date >= start && date <= addDays(start, 6);
 		const buttons = Array.from({ length: 7 }, () => {
 			const button = Object.assign(document.createElement("button"), { type: "button", className: "day" });
 			button.addEventListener("click", () => {
@@ -154,17 +156,14 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			return button;
 		});
 		const render = () => {
-			const sunday = weeks[week];
-			weekLabel.textContent = range.formatRange(noon(sunday), noon(addDays(sunday, 6)));
+			const start = weeks[week];
+			weekLabel.textContent = range.formatRange(noon(start), noon(addDays(start, 6)));
 			prev.disabled = week === 0;
 			next.disabled = week === weeks.length - 1;
-			// Days before today keep their column, so the weekdays still line up, but aren't shown.
-			const today = dateOf(new Date());
 			buttons.forEach((button, i) => {
-				const date = addDays(sunday, i);
+				const date = addDays(start, i);
 				button.dataset.date = date;
 				button.disabled = !groups.has(date);
-				button.classList.toggle("past", date < today);
 				button.setAttribute("aria-pressed", String(date === picked));
 				button.setAttribute("aria-label", day.format(noon(date)) + (button.disabled ? ": no techs available" : ""));
 				button.replaceChildren(Object.assign(document.createElement("span"), { textContent: weekday.format(noon(date)) }), dayOfMonth.format(noon(date)));
@@ -172,7 +171,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			groups.forEach((group, date) => (group.hidden = date !== picked));
 			dayNote.textContent = [
 				picked ? "" : "Pick a day to see its times.",
-				buttons.some((button) => button.disabled && !button.classList.contains("past")) ?"Greyed-out days have no techs available." : "",
+				buttons.some((button) => button.disabled) ? "Greyed-out days have no techs available." : "",
 			].join(" ").trim();
 			dayNote.hidden = !dayNote.textContent;
 		};
@@ -181,7 +180,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			// A picked time stays picked; its day opens again when its week comes back.
 			const slot = chosen().value;
 			const date = slot && dateOf(new Date(slot));
-			picked = date && sundayOf(date) === weeks[week] ? date : "";
+			picked = date && inWeek(date, weeks[week]) ? date : "";
 			render();
 		};
 		prev.addEventListener("click", () => step(-1));
@@ -239,9 +238,11 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 				note.textContent = `${lost ? "The time you picked was just taken. " : ""}No open times online right now. Tell us what works in the notes, and we'll find one.`;
 				return;
 			}
-			weeks = [...new Set([...groups.keys()].map(sundayOf))].sort();
+			// This week starts today instead of on Sunday.
+			const today = dateOf(new Date());
+			weeks = [...new Set([...groups.keys()].map((date) => (sundayOf(date) < today ? today : sundayOf(date))))].sort();
 			week = Math.max(0, weeks.indexOf(shownWeek));
-			if (!groups.has(picked) || sundayOf(picked) !== weeks[week]) picked = "";
+			if (!groups.has(picked) || !inWeek(picked, weeks[week])) picked = "";
 			render();
 			field.hidden = false;
 			note.textContent = lost ? "The time you picked was just taken. Pick another, or leave it to us." : describe(chosen());
@@ -364,9 +365,6 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	.slots :global(.day:disabled) {
 		opacity: 0.4;
 		cursor: default;
-	}
-	.slots :global(.day.past) {
-		visibility: hidden;
 	}
 	.slots :global(.day span) {
 		color: var(--muted);
