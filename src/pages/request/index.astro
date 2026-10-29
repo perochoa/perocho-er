@@ -32,27 +32,11 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 								Name
 								<input name="name" autocomplete="name" maxlength="100" required />
 							</label>
-							<div class="choice" role="radiogroup" aria-labelledby="contact-label">
-								<span id="contact-label">How should we reach you?</span>
-								<label><input type="radio" name="contact" value="email" checked required /> Email</label>
-								<label><input type="radio" name="contact" value="text" /> Text</label>
-								<label><input type="radio" name="contact" value="messenger" /> Messenger</label>
-							</div>
-							<div class="row">
-								<label data-contact="email">
-									Email
-									<input type="email" name="email" autocomplete="email" maxlength="200" />
-								</label>
-								<label data-contact="text">
-									Phone
-									<input type="tel" name="phone" autocomplete="tel" maxlength="40" />
-								</label>
-								<label data-contact="messenger">
-									Facebook name
-									<input name="facebook" maxlength="100" />
-								</label>
-							</div>
-							<p class="hint">Fill in the one you picked; the others are optional.</p>
+							<label>
+								Email
+								<input type="email" name="email" autocomplete="email" maxlength="200" required />
+							</label>
+							<p class="hint">We'll reply by email. Rather use Messenger? <a href={site.messengerUrl}>Message us there</a> instead.</p>
 						</fieldset>
 					</div>
 
@@ -130,17 +114,6 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	const form = document.querySelector<HTMLFormElement>("form[data-slots]");
 
 	if (form) {
-		// Only the contact detail they picked is required.
-		const contactInputs = form.querySelectorAll<HTMLInputElement>("[data-contact] input");
-		const syncContact = () => {
-			const picked = form.querySelector<HTMLInputElement>("[name=contact]:checked")?.value;
-			contactInputs.forEach((input) => {
-				input.required = input.closest<HTMLElement>("[data-contact]")?.dataset.contact === picked;
-			});
-		};
-		form.querySelectorAll("[name=contact]").forEach((radio) => radio.addEventListener("change", syncContact));
-		syncContact();
-
 		// Without JS the form still works; people put the times that suit them in the notes.
 		const field = form.querySelector<HTMLElement>("[data-slot-field]")!;
 		const days = field.querySelector<HTMLElement>("[data-days]")!;
@@ -474,11 +447,6 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		accent-color: var(--accent);
 		margin: 0;
 	}
-	.row {
-		display: grid;
-		grid-template-columns: repeat(3, minmax(0, 1fr));
-		gap: 1rem;
-	}
 	.hint,
 	.optional {
 		margin: 0;
@@ -497,9 +465,6 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		cursor: pointer;
 	}
 	@media (max-width: 40rem) {
-		.row {
-			grid-template-columns: minmax(0, 1fr);
-		}
 		button {
 			justify-self: stretch;
 		}

@@ -5,7 +5,7 @@
 
 import { sendMail } from "./fastmail.ts";
 import { accessToken, createHold, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
-import { describe, formatTime, parseIntake, replyTo, subject, what } from "./intake.ts";
+import { describe, formatTime, parseIntake, subject, what } from "./intake.ts";
 import { blocks, openSlots } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
@@ -142,7 +142,7 @@ async function request(env: Env, form: FormData, ip: string | null): Promise<Out
 		await sendMail(env.FASTMAIL_TOKEN, {
 			from: env.MAIL_FROM,
 			to: env.MAIL_TO,
-			replyTo: replyTo(intake),
+			replyTo: intake.email,
 			subject: subject(intake, time),
 			text: describe(intake, time, tech?.name ?? null),
 		});

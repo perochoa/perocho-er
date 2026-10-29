@@ -149,7 +149,6 @@ beforeEach(() => {
 const submit = (fields: Record<string, string>, headers: Record<string, string> = {}, overrides = {}) => {
 	const body = new URLSearchParams({
 		name: "Jane",
-		contact: "email",
 		email: "jane@example.com",
 		service: "PS5 deep cleaning",
 		device: "PS5 disc",
