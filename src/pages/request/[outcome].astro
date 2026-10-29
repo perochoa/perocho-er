@@ -10,7 +10,7 @@ export function getStaticPaths() {
 			params: { outcome: "sent" },
 			props: {
 				title: "Request sent",
-				text: "Thanks! We've emailed you a copy, and we'll email you again when a tech confirms it. Not there? Check your spam folder.",
+				text: "Thanks! We've emailed you a copy, and we'll email you again when a tech confirms your drop-off time. A tech may call you about the price. No email? Check your spam folder.",
 				retry: false,
 			},
 		},
@@ -18,7 +18,7 @@ export function getStaticPaths() {
 			params: { outcome: "taken" },
 			props: {
 				title: "That time was just taken",
-				text: "Someone booked it a moment before you. Pick another time, or message us and we'll find one.",
+				text: "Someone picked it a moment before you. Go back to the form and pick another time, or message us and we'll find one.",
 				retry: true,
 			},
 		},
@@ -26,7 +26,7 @@ export function getStaticPaths() {
 			params: { outcome: "failed" },
 			props: {
 				title: "Your request didn't go through",
-				text: "Something went wrong on our end, or a field was missing. Try again, or message us instead.",
+				text: `Something went wrong on our end, or a field was missing. Try again, or message us on Messenger or email ${site.email} instead.`,
 				retry: true,
 			},
 		},
@@ -41,4 +41,5 @@ const { title, text, retry } = Astro.props;
 	<a class={retry ? "button secondary" : "button"} href={retry ? site.messengerUrl : "/"}>
 		{retry ? "Message us" : "Go to the home page"}
 	</a>
+	{retry && <a class="button secondary" href={`mailto:${site.email}`}>Email us</a>}
 </MessagePage>
