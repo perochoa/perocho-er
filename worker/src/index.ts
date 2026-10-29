@@ -48,18 +48,27 @@ async function findSlots(env: Env, token: string) {
 	return { techs, slots: openSlots(events, options) };
 }
 
-async function slots(env: Env, origin: string | null): Promise<Response> {
+async function slots(env: Env, origin: string | null, ip: string | null): Promise<Response> {
+	// Each fetch costs a Google call per tech, so cap it per visitor. The form treats any non-OK
+	// response as "no times online" and falls back to the notes.
+	const { success } = await env.SLOTS_LIMITER.limit({ key: ip ?? "unknown" });
+	if (!success) {
+		console.warn("rate limited /slots");
+		return new Response("Too many requests", { status: 429 });
+	}
 	const allowed = [env.SITE_URL, ...env.DEV_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)];
-	const { slots } = await findSlots(env, await accessToken(env.GOOGLE_SERVICE_ACCOUNT));
+	const { slots: open } = await findSlots(env, await accessToken(env.GOOGLE_SERVICE_ACCOUNT));
 	return Response.json(
 		{
 			timeZone: env.TIME_ZONE,
-			slots: slots.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })),
+			slots: open.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })),
 		},
 		{
 			headers: {
 				"Access-Control-Allow-Origin": origin && allowed.includes(origin) ? origin : env.SITE_URL,
-				"Cache-Control": "max-age=60",
+				// Revalidate every time: after a "taken" result the form must not re-offer the slot it
+				// just lost from the browser's cache.
+				"Cache-Control": "no-cache",
 				Vary: "Origin",
 			},
 		},
@@ -154,7 +163,7 @@ export default {
 		const { pathname } = new URL(req.url);
 		try {
 			if (req.method === "GET" && pathname === "/slots") {
-				return await slots(env, req.headers.get("Origin"));
+				return await slots(env, req.headers.get("Origin"), req.headers.get("CF-Connecting-IP"));
 			}
 			if (req.method === "POST" && pathname === "/request") {
 				const outcome = await request(env, await req.formData(), req.headers.get("CF-Connecting-IP"));
