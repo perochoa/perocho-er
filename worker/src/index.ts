@@ -7,7 +7,7 @@
 //   POST /offers/<token> those buttons
 // and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time.
 
-import { sendMail } from "./fastmail.ts";
+import { MailError, sendMail } from "./fastmail.ts";
 import { accessToken, createEvent, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
@@ -234,10 +234,11 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 			].map((mail) => ({ from: env.MAIL_FROM, ...mail })),
 		);
 	} catch (error) {
-		// Without a hold the emails were the only way the techs would hear of it. With one, its
-		// description has every detail and the tech's link, and sending them to "failed" would
-		// make a retry find their own hold and say "taken".
-		if (holds.length === 0) {
+		// Without a hold the emails were the only way the techs would hear of it, so if none went out
+		// it's as if it never came in. With a hold, its description has every detail and the tech's
+		// link, and sending them to "failed" would make a retry find their own hold and say "taken".
+		// Once some went out, their links have to keep working.
+		if (holds.length === 0 && !(error instanceof MailError && error.sent)) {
 			await db.batch([
 				db.prepare("DELETE FROM offers WHERE request_id = ?").bind(id),
 				db.prepare("DELETE FROM requests WHERE id = ?").bind(id),

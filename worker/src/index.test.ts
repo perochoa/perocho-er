@@ -418,6 +418,29 @@ test("sends people to the failure page when a service is down", async () => {
 	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 0);
 });
 
+test("keeps a request without a time when only some of its emails went out", async () => {
+	const fake = globalThis.fetch;
+	// Fastmail turns down the first submission (Richard's) and sends the rest.
+	globalThis.fetch = async (input, init) => {
+		const response = await fake(input, init);
+		if (String(input) !== "https://api.fastmail.com/jmap/api/" || !String(init?.body).includes("EmailSubmission/set")) {
+			return response;
+		}
+		const json: any = await response.json();
+		const submission = json.methodResponses[1][1];
+		delete submission.created.send0;
+		submission.notCreated = { send0: { type: "forbiddenToSend" } };
+		return Response.json(json);
+	};
+	const original = console.error;
+	console.error = () => {};
+	const response = await submit({});
+	console.error = original;
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.equal(status(), "pending");
+	assert.equal((await offerPage(linkFor("sam@example.com"))).status, 200);
+});
+
 test("emails the customer when their request fails", async () => {
 	const fake = globalThis.fetch;
 	globalThis.fetch = async (input, init) =>
