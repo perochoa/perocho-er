@@ -15,14 +15,14 @@ import { blocks, openSlots, type Slot } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
-interface Tech {
+export interface Tech {
 	name: string;
 	calendarId: string;
 	email?: string; // where their requests go; defaults to calendarId
 }
 
 // The secret is a JSON list of techs. Errors name TECHS but never echo it.
-function parseTechs(raw: string): Tech[] {
+export function parseTechs(raw: string): Tech[] {
 	let techs: unknown;
 	try {
 		techs = JSON.parse(raw);

@@ -10,6 +10,7 @@
     "deploy": "wrangler deploy",
     "check": "tsc --noEmit && tsc --noEmit -p tsconfig.test.json",
     "test": "node --test src/*.test.ts",
+    "check-techs": "node scripts/check-techs.ts",
     "types": "wrangler types --strict-vars=false"
   },
   "devDependencies": {
