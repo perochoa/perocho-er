@@ -1,6 +1,8 @@
 ---
 import { Image } from "astro:assets";
 import { getCollection, render } from "astro:content";
+import HeroScene from "../components/HeroScene.astro";
+import Joystick from "../components/Joystick.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { site } from "../site";
 
@@ -38,6 +40,7 @@ const steps = [
 <BaseLayout title={site.name} description={site.description}>
 	<main>
 		<section class="hero">
+			<HeroScene />
 			<div class="wrap hero-grid">
 				<div>
 					<p class="eyebrow">Family-run · Mississauga</p>
@@ -69,17 +72,7 @@ const steps = [
 					}
 				</div>
 
-				<!-- The logo's idea drawn large: a drifting stick (faint, trailing) and a centred one. -->
-				<svg class="drift" viewBox="0 0 320 320" aria-hidden="true">
-					<circle cx="160" cy="160" r="150" class="housing"></circle>
-					<circle cx="160" cy="160" r="104" class="range"></circle>
-					<circle cx="160" cy="160" r="58" class="range"></circle>
-					<path d="M160 22v276M22 160h276" class="cross"></path>
-					<path d="M160 160 Q 200 150 214 106" class="trail"></path>
-					<circle cx="214" cy="106" r="46" class="worn"></circle>
-					<circle cx="160" cy="160" r="50" class="fixed"></circle>
-					<circle cx="160" cy="160" r="20" class="nub"></circle>
-				</svg>
+				<Joystick requestHref={site.intakeUrl ? "/request/" : ""} />
 			</div>
 		</section>
 
@@ -231,9 +224,14 @@ const steps = [
 <style>
 	/* Hero */
 	.hero {
+		position: relative;
+		overflow: hidden;
+		isolation: isolate;
 		padding-block: clamp(3rem, 2rem + 5vw, 6rem);
-		background-image: radial-gradient(circle, var(--line) 1px, transparent 1px);
-		background-size: 22px 22px;
+	}
+	.hero-grid {
+		position: relative;
+		z-index: 1;
 	}
 	.hero-grid {
 		display: grid;
@@ -272,46 +270,6 @@ const steps = [
 	.stars {
 		color: var(--accent);
 		letter-spacing: 0.1em;
-	}
-	.drift {
-		width: 100%;
-		max-width: 22rem;
-		justify-self: center;
-	}
-	.drift .housing {
-		fill: var(--surface);
-		stroke: var(--line);
-		stroke-width: 2;
-	}
-	.drift .range {
-		fill: none;
-		stroke: var(--line);
-		stroke-width: 1.5;
-		stroke-dasharray: 4 6;
-	}
-	.drift .cross {
-		stroke: var(--line);
-		stroke-width: 1.5;
-	}
-	.drift .trail {
-		fill: none;
-		stroke: var(--accent);
-		stroke-width: 2;
-		stroke-dasharray: 3 6;
-		opacity: 0.5;
-	}
-	.drift .worn {
-		fill: none;
-		stroke: var(--accent);
-		stroke-width: 8;
-		opacity: 0.35;
-	}
-	.drift .fixed {
-		fill: var(--accent);
-	}
-	.drift .nub {
-		fill: var(--on-accent);
-		opacity: 0.18;
 	}
 
 	/* Facts strip */
@@ -550,11 +508,6 @@ const steps = [
 		.hero-grid,
 		.contact {
 			grid-template-columns: minmax(0, 1fr);
-		}
-		.drift {
-			max-width: 13rem;
-			order: -1;
-			justify-self: start;
 		}
 	}
 	@media (max-width: 30rem) {
