@@ -5,7 +5,7 @@ https://repairs.perocho.com. A static [Astro](https://astro.build) site with no 
 
 ## Development
 
-Needs Node 22.12 or later (`engines` in `package.json`).
+Needs Node 24 or later (`engines` in `package.json`).
 
 ```sh
 npm ci
