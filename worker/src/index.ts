@@ -66,7 +66,9 @@ async function slots(env: Env, origin: string | null, ip: string | null): Promis
 		{
 			headers: {
 				"Access-Control-Allow-Origin": origin && allowed.includes(origin) ? origin : env.SITE_URL,
-				"Cache-Control": "max-age=60",
+				// Revalidate every time: after a "taken" result the form must not re-offer the slot it
+				// just lost from the browser's cache.
+				"Cache-Control": "no-cache",
 				Vary: "Origin",
 			},
 		},

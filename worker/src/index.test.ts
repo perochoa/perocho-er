@@ -162,6 +162,7 @@ test("lists only times when some tech is free", async () => {
 	assert.ok(starts.includes(iso(slotStart)));
 	assert.ok(!starts.includes(iso(slotStart + hour)));
 	assert.equal(response.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
+	assert.equal(response.headers.get("Cache-Control"), "no-cache");
 });
 
 const slotsFrom = (origin: string, overrides = {}) =>
