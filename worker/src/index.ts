@@ -163,7 +163,9 @@ async function hold(env: Env, token: string, offer: Offer, slot: Slot, intake: I
 			return null;
 		}
 	} catch (error) {
-		// Our hold is written, so keep it; at worst the tech sees two holds.
+		// Our hold is written, so keep it; at worst the tech sees two holds. That includes one that
+		// lost but couldn't be deleted: once the request is settled the hourly job deletes it, and
+		// whichever request a tech takes first, they can't take the other too.
 		console.error(error);
 	}
 	return ours.id;
