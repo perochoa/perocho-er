@@ -5,7 +5,7 @@
 
 import { sendMail } from "./fastmail.ts";
 import { accessToken, createHold, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
-import { describe, formatTime, parseIntake, replyTo, subject } from "./intake.ts";
+import { describe, formatTime, parseIntake, replyTo, subject, what } from "./intake.ts";
 import { blocks, openSlots, parseWorkHours } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
@@ -80,7 +80,7 @@ async function request(env: Env, form: FormData, ip: string | null): Promise<str
 		tech = found.techs[slot.techs[0]];
 		time = formatTime(slot.start, env.TIME_ZONE);
 		const hold = await createHold(token, tech.calendarId, {
-			summary: `Request: ${intake.service || intake.device} (${intake.name})`,
+			summary: `Request: ${what(intake)} (${intake.name})`,
 			description: `${describe(intake, time, tech.name)}\n\nConfirm by renaming this event; delete it to free the time.`,
 			start: slot.start,
 			end: slot.end,
