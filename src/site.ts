@@ -18,9 +18,9 @@ interface Site {
 }
 
 export const site: Site = {
-	name: "Perocho ER",
-	tagline: "The ER for your electronics.",
-	intro: "Family-run PS5 repairs and upgrades in Mississauga.",
+	name: "Perocho Repairs",
+	tagline: "PS5 repairs and upgrades in Mississauga.",
+	intro: "Stick drift, overheating and HDMI port fixes from a family-run shop.",
 	description:
 		"Family-run PS5 repairs and upgrades in Mississauga: stick drift fixes, deep cleaning and HDMI port replacement.",
 	email: "contact@perocho.com",
