@@ -53,12 +53,16 @@ const send = async (env: Env, mails: Omit<Mail, "from">[]) => {
 	}
 };
 
+// Once the time has started nobody can take it; the scheduled job expires it.
+const passed = (request: RequestRow, now = Date.now()) => request.slot_start !== null && request.slot_start <= now;
+
 // First tech to get here takes it. A tech who declined can still change their mind while it's open.
 async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	const won = await env.DB.prepare(
-		"UPDATE requests SET status = 'confirmed', confirmed_by = ?1 WHERE id = ?2 AND status = 'pending'",
+		`UPDATE requests SET status = 'confirmed', confirmed_by = ?1
+		 WHERE id = ?2 AND status = 'pending' AND (slot_start IS NULL OR slot_start > ?3)`,
 	)
-		.bind(offer.token, request.id)
+		.bind(offer.token, request.id, Date.now())
 		.run();
 	if (won.meta.changes !== 1) return;
 	await env.DB.prepare("UPDATE offers SET declined = 0 WHERE token = ?").bind(offer.token).run();
@@ -181,13 +185,15 @@ export async function page(env: Env, token: string): Promise<Response> {
 				: [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""]
 			: request.status === "declined"
 				? ["Every tech declined this request", "The customer has been told.", ""]
-				: offer.declined
-					? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
-					: [
-							"New repair request",
-							time ? `For ${stop(time)} The first tech to take it gets it.` : "No time picked. The first tech to take it gets it.",
-							`${take}<button name="action" value="decline">Decline</button>`,
-						];
+				: passed(request)
+					? ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""]
+					: offer.declined
+						? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
+						: [
+								"New repair request",
+								time ? `For ${stop(time)} The first tech to take it gets it.` : "No time picked. The first tech to take it gets it.",
+								`${take}<button name="action" value="decline">Decline</button>`,
+							];
 
 	return html(
 		title,

@@ -609,6 +609,19 @@ test("a tech who declined can still take it while it's open", async () => {
 	assert.equal(holds.at(-1)!.body.status, "confirmed");
 });
 
+test("nobody can take it once the time has started", async () => {
+	await submit({ slot: iso(slotStart) });
+	db.sqlite.prepare("UPDATE requests SET slot_start = ?, slot_end = ?").run(Date.now() - hour, Date.now());
+	const sam = linkFor("sam@example.com");
+	mails = [];
+	await press(sam, "confirm");
+	assert.equal(status(), "pending");
+	assert.equal(mails.length + patched.length, 0);
+	const body = await (await offerPage(sam)).text();
+	assert.match(body, /This time has passed/);
+	assert.ok(!body.includes("<form"));
+});
+
 test("one unreadable calendar costs only that tech their times", async () => {
 	const errors: unknown[] = [];
 	const original = console.error;
