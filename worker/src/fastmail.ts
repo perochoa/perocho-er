@@ -33,7 +33,10 @@ export interface Mail {
 	text: string;
 }
 
-export async function sendMail(token: string, mail: Mail): Promise<void> {
+// Sends them together: one session and one set of calls however many there are. Throws if any
+// of them wasn't sent.
+export async function sendMail(token: string, mails: Mail[]): Promise<void> {
+	if (mails.length === 0) return;
 	const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
 	const sessionResponse = await fetch(SESSION, { headers });
 	if (!sessionResponse.ok) throw new Error(`jmap session: ${sessionResponse.status}`);
@@ -56,57 +59,69 @@ export async function sendMail(token: string, mail: Mail): Promise<void> {
 		return methodResponses;
 	};
 
-	const [identities, drafts, sent] = await call([
+	const [identities, draftsMailbox, sentMailbox] = await call([
 		["Identity/get", { accountId }, "identities"],
 		["Mailbox/query", { accountId, filter: { role: "drafts" } }, "drafts"],
 		["Mailbox/query", { accountId, filter: { role: "sent" } }, "sent"],
 	]);
-	const identity = (identities[1].list as Identity[]).find(
-		(i) => i.email.toLowerCase() === mail.from.toLowerCase(),
-	);
-	if (!identity) throw new Error(`jmap: no identity for ${mail.from}`);
-	const draftsId = firstId(drafts);
-	const sentId = firstId(sent);
+	const identityOf = (mail: Mail) => {
+		const identity = (identities[1].list as Identity[]).find(
+			(i) => i.email.toLowerCase() === mail.from.toLowerCase(),
+		);
+		if (!identity) throw new Error(`jmap: no identity for ${mail.from}`);
+		return identity;
+	};
+	const draftsId = firstId(draftsMailbox);
+	const sentId = firstId(sentMailbox);
 
 	// Mail to our own address arrives in the inbox anyway, so a Sent copy would sit beside it in the
 	// same thread and look like a duplicate; drop the draft once it's sent instead.
-	const toSelf = mail.to.toLowerCase() === identity.email.toLowerCase();
-	const [created, submitted] = await call([
-		[
-			"Email/set",
+	const toSelf = (mail: Mail) => mail.to.toLowerCase() === mail.from.toLowerCase();
+	const drafts = Object.fromEntries(
+		mails.map((mail, i) => [
+			`draft${i}`,
 			{
-				accountId,
-				create: {
-					draft: {
-						mailboxIds: { [draftsId]: true },
-						keywords: { $draft: true, $seen: true },
-						from: [{ name: identity.name, email: identity.email }],
-						to: [{ email: mail.to }],
-						...(mail.replyTo && { replyTo: [{ email: mail.replyTo }] }),
-						subject: mail.subject,
-						bodyValues: { body: { value: mail.text } },
-						textBody: [{ partId: "body", type: "text/plain" }],
-					},
-				},
+				mailboxIds: { [draftsId]: true },
+				keywords: { $draft: true, $seen: true },
+				from: [{ name: identityOf(mail).name, email: identityOf(mail).email }],
+				to: [{ email: mail.to }],
+				...(mail.replyTo && { replyTo: [{ email: mail.replyTo }] }),
+				subject: mail.subject,
+				bodyValues: { body: { value: mail.text } },
+				textBody: [{ partId: "body", type: "text/plain" }],
 			},
-			"email",
-		],
+		]),
+	);
+	const sends = Object.fromEntries(
+		mails.map((mail, i) => [`send${i}`, { identityId: identityOf(mail).id, emailId: `#draft${i}` }]),
+	);
+	const destroy = mails.flatMap((mail, i) => (toSelf(mail) ? [`#send${i}`] : []));
+	const file = Object.fromEntries(
+		mails.flatMap((mail, i) =>
+			toSelf(mail)
+				? []
+				: [
+						[
+							`#send${i}`,
+							{
+								[`mailboxIds/${draftsId}`]: null,
+								[`mailboxIds/${sentId}`]: true,
+								"keywords/$draft": null,
+							},
+						],
+					],
+		),
+	);
+
+	const [created, submitted] = await call([
+		["Email/set", { accountId, create: drafts }, "email"],
 		[
 			"EmailSubmission/set",
 			{
 				accountId,
-				create: { send: { identityId: identity.id, emailId: "#draft" } },
-				...(toSelf
-					? { onSuccessDestroyEmail: ["#send"] }
-					: {
-							onSuccessUpdateEmail: {
-								"#send": {
-									[`mailboxIds/${draftsId}`]: null,
-									[`mailboxIds/${sentId}`]: true,
-									"keywords/$draft": null,
-								},
-							},
-						}),
+				create: sends,
+				...(destroy.length > 0 && { onSuccessDestroyEmail: destroy }),
+				...(Object.keys(file).length > 0 && { onSuccessUpdateEmail: file }),
 			},
 			"submission",
 		],

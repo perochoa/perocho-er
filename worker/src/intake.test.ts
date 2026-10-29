@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseIntake } from "./intake.ts";
+import { parseIntake, stop } from "./intake.ts";
 
 const form = (fields: Record<string, string>) => {
 	const data = new FormData();
@@ -48,4 +48,9 @@ test("rejects missing fields and unknown choices", () => {
 
 test("flags the honeypot as spam", () => {
 	assert.deepEqual(parseIntake(form({ website: "http://spam" })), { ok: false, spam: true });
+});
+
+test("ends a sentence on a time with one period", () => {
+	assert.equal(stop("Tue, Nov 3, 8:00 a.m."), "Tue, Nov 3, 8:00 a.m.");
+	assert.equal(stop("Tue, Nov 3, 08:00"), "Tue, Nov 3, 08:00.");
 });

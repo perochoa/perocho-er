@@ -2,6 +2,8 @@
 
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { DatabaseSync } from "node:sqlite";
 import { beforeEach, test } from "node:test";
 import { resetTokenCache } from "./google.ts";
 import worker from "./index.ts";
@@ -28,6 +30,9 @@ const env = {
 		private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
 	}),
 	FASTMAIL_TOKEN: "fm-token",
+	get DB() {
+		return db as unknown as D1Database;
+	},
 	// Lets `allowed` posts through, recording the key of each one it's asked about.
 	REQUEST_LIMITER: {
 		limit: async ({ key }: { key: string }) => {
@@ -44,7 +49,37 @@ const env = {
 	},
 };
 
+// D1 on top of an in-memory SQLite with the real migrations, for the few calls the worker makes.
+function fakeD1() {
+	const sqlite = new DatabaseSync(":memory:");
+	sqlite.exec(readFileSync(`${import.meta.dirname}/../migrations/0001_requests.sql`, "utf8"));
+	const statement = (sql: string, params: any[] = []) => ({
+		bind: (...values: any[]) => statement(sql, values),
+		run: async () => ({ success: true, meta: { changes: Number(sqlite.prepare(sql).run(...params).changes) } }),
+		first: async () => sqlite.prepare(sql).get(...params) ?? null,
+		all: async () => ({ success: true, results: sqlite.prepare(sql).all(...params) }),
+	});
+	return {
+		sqlite,
+		prepare: (sql: string) => statement(sql),
+		batch: async (statements: ReturnType<typeof statement>[]) => {
+			sqlite.exec("BEGIN");
+			try {
+				const results = [];
+				for (const s of statements) results.push(await s.run());
+				sqlite.exec("COMMIT");
+				return results;
+			} catch (error) {
+				sqlite.exec("ROLLBACK");
+				throw error;
+			}
+		},
+	};
+}
+
 const iso = (ms: number) => new Date(ms).toISOString();
+let db: ReturnType<typeof fakeD1>;
+let patched: { calendarId: string; eventId: string; body: any }[];
 let calendars: Record<string, object[]>;
 let holds: { calendarId: string; body: any }[];
 let deleted: { calendarId: string; eventId: string }[];
@@ -75,8 +110,10 @@ beforeEach(() => {
 			{ summary: "Gym", start: { dateTime: iso(slotStart + hour) }, end: { dateTime: iso(slotStart + 2 * hour) } },
 		],
 	};
+	db = fakeD1();
 	holds = [];
 	deleted = [];
+	patched = [];
 	mails = [];
 	submissions = [];
 	tokenRequests = 0;
@@ -98,6 +135,14 @@ beforeEach(() => {
 			return Response.json({ access_token: "google-token", expires_in: tokenLifetime });
 		}
 		const event = url.pathname.match(/\/calendars\/([^/]+)\/events\/([^/]+)$/);
+		if (event && init?.method === "PATCH") {
+			const [calendarId, eventId] = [event[1], event[2]].map(decodeURIComponent);
+			const found: any = calendars[calendarId].find((e: any) => e.id === eventId);
+			if (!found) return new Response("gone", { status: 404 });
+			patched.push({ calendarId, eventId, body });
+			Object.assign(found, body);
+			return Response.json({ id: eventId });
+		}
 		if (event && init?.method === "DELETE") {
 			const [calendarId, eventId] = [event[1], event[2]].map(decodeURIComponent);
 			deleted.push({ calendarId, eventId });
@@ -133,12 +178,13 @@ beforeEach(() => {
 					],
 				});
 			}
-			mails.push(body.methodCalls[0][1].create.draft);
+			const drafts = body.methodCalls[0][1].create;
+			mails.push(...Object.values(drafts));
 			submissions.push(body.methodCalls[1][1]);
 			return Response.json({
 				methodResponses: [
-					["Email/set", { created: { draft: { id: "e1" } } }, "email"],
-					["EmailSubmission/set", { created: { send: { id: "s1" } } }, "submission"],
+					["Email/set", { created: drafts }, "email"],
+					["EmailSubmission/set", { created: body.methodCalls[1][1].create }, "submission"],
 				],
 			});
 		}
@@ -212,7 +258,11 @@ for (const [label, TECHS] of [
 	});
 }
 
-test("holds the picked time on the free tech's calendar and emails the techs", async () => {
+const to = (address: string) => mails.filter((mail) => mail.to[0].email === address);
+const text = (mail: any) => mail.bodyValues.body.value as string;
+const linkFor = (address: string) => text(to(address)[0]).match(/https:\/\/intake\.test\/offers\/[0-9a-f-]+/)![0];
+
+test("holds the picked time on the free tech's calendar and offers it to every tech", async () => {
 	const response = await submit({ slot: iso(slotStart) });
 	assert.equal(response.status, 303);
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
@@ -221,17 +271,40 @@ test("holds the picked time on the free tech's calendar and emails the techs", a
 	assert.equal(holds[0].calendarId, "sam@example.com");
 	assert.equal(holds[0].body.status, "tentative");
 	assert.equal(holds[0].body.summary, "Request: PS5 deep cleaning (Jane)");
+	assert.ok(holds[0].body.description.includes(linkFor("sam@example.com")));
 
-	assert.equal(mails.length, 1);
-	assert.deepEqual(mails[0].replyTo, [{ email: "jane@example.com" }]);
-	assert.match(mails[0].bodyValues.body.value, /Held on: Sam's calendar \(tentative\)/);
+	// Richard is busy then but still hears of it, with his own link.
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["richard@example.com", "sam@example.com", "contact@perocho.com", "jane@example.com"]);
+	assert.notEqual(linkFor("richard@example.com"), linkFor("sam@example.com"));
+	assert.deepEqual(to("sam@example.com")[0].replyTo, [{ email: "jane@example.com" }]);
+	assert.match(text(to("sam@example.com")[0]), /tentative hold/);
+	assert.doesNotMatch(text(to("richard@example.com")[0]), /tentative hold/);
+	assert.doesNotMatch(text(to("contact@perocho.com")[0]), /offers/);
+	assert.match(text(to("contact@perocho.com")[0]), /Sent to: Richard, Sam\nHeld on: Sam \(tentative\)/);
+	assert.match(to("jane@example.com")[0].subject, /^We got your repair request/);
+	assert.equal(to("jane@example.com")[0].replyTo, undefined);
 });
 
-test("sends a request without a time as email only", async () => {
+test("holds the time on every tech who's free then", async () => {
+	calendars["richard@example.com"].pop(); // no dentist
+	await submit({ slot: iso(slotStart) });
+	assert.deepEqual(holds.map((hold) => hold.calendarId), ["richard@example.com", "sam@example.com"]);
+	const offers = db.sqlite.prepare("SELECT name, hold_id FROM offers ORDER BY position").all();
+	assert.deepEqual(offers.map((o: any) => [o.name, o.hold_id]), [["Richard", "hold1"], ["Sam", "hold2"]]);
+});
+
+test("sends a request without a time to every tech, holding nothing", async () => {
 	const response = await submit({});
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
 	assert.equal(holds.length, 0);
-	assert.match(mails[0].bodyValues.body.value, /None picked/);
+	assert.match(text(to("richard@example.com")[0]), /None picked/);
+	assert.equal(to("sam@example.com").length, 1);
+});
+
+test("emails a tech at their email when TECHS gives one", async () => {
+	await submit({}, {}, { TECHS: JSON.stringify([{ name: "Sam", calendarId: "sam@example.com", email: "sam@work.example" }]) });
+	assert.equal(to("sam@work.example").length, 1);
+	assert.equal(to("sam@example.com").length, 0);
 });
 
 test("sends people back when the time was just taken", async () => {
@@ -260,6 +333,7 @@ test("gives up its hold when a racing request held the slot first", async () => 
 	assert.deepEqual(deleted, [{ calendarId: "sam@example.com", eventId: "hold1" }]);
 	assert.deepEqual(calendars["sam@example.com"].map((e: any) => e.id).filter(Boolean), ["rival"]);
 	assert.equal(mails.length, 0);
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 0);
 });
 
 test("keeps its hold when it beat a racing request", async () => {
@@ -267,7 +341,7 @@ test("keeps its hold when it beat a racing request", async () => {
 	const response = await submit({ slot: iso(slotStart) });
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
 	assert.equal(deleted.length, 0);
-	assert.equal(mails.length, 1);
+	assert.equal(mails.length, 4);
 });
 
 test("breaks a tie between racing holds by id, so both sides agree", async () => {
@@ -327,6 +401,7 @@ test("counts a held request as sent when only the email fails", async () => {
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
 	assert.equal(holds.length, 1);
 	assert.match(holds[0].body.description, /Loud fan/);
+	assert.match(holds[0].body.description, /\/offers\//);
 	assert.equal(errors.length, 1);
 });
 
@@ -337,6 +412,21 @@ test("sends people to the failure page when a service is down", async () => {
 	const response = await submit({});
 	console.error = original;
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
+	// The techs never heard of it, so it isn't kept.
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 0);
+});
+
+test("emails the customer when their request fails", async () => {
+	const fake = globalThis.fetch;
+	globalThis.fetch = async (input, init) =>
+		String(input) === "https://oauth2.googleapis.com/token" ? new Response("down", { status: 503 }) : fake(input, init);
+	const original = console.error;
+	console.error = () => {};
+	const response = await submit({ slot: iso(slotStart) });
+	console.error = original;
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com"]);
+	assert.match(mails[0].subject, /didn't go through/);
 });
 
 const quietly = async <T>(run: () => Promise<T>) => {
@@ -374,12 +464,13 @@ test("counts each valid post against the visitor's IP", async () => {
 	const first = await submit({ slot: iso(slotStart) }, { "CF-Connecting-IP": "203.0.113.7" });
 	assert.equal(first.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
 	assert.equal(holds.length, 1);
-	assert.equal(mails.length, 1);
+	assert.equal(mails.length, 4);
 	assert.deepEqual(limitKeys, ["203.0.113.7"]);
 
+	// Nobody is emailed, the customer included: the form mustn't be a way to flood an inbox.
 	const second = await quietly(() => submit({}, { "CF-Connecting-IP": "203.0.113.7" }));
 	assert.equal(second.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
-	assert.equal(mails.length, 1);
+	assert.equal(mails.length, 4);
 });
 
 test("shares one count between posts without a visitor IP", async () => {
@@ -395,10 +486,124 @@ test("doesn't count honeypot or invalid posts", async () => {
 
 test("doesn't keep a Sent copy of mail to our own address", async () => {
 	await submit({});
-	assert.deepEqual(submissions[0].onSuccessDestroyEmail, ["#send"]);
-	assert.equal(submissions[0].onSuccessUpdateEmail, undefined);
+	// Richard, Sam, contact@ (ourselves), Jane.
+	assert.deepEqual(submissions[0].onSuccessDestroyEmail, ["#send2"]);
+	assert.deepEqual(Object.keys(submissions[0].onSuccessUpdateEmail), ["#send0", "#send1", "#send3"]);
+	assert.equal(submissions[0].onSuccessUpdateEmail["#send0"]["mailboxIds/sent"], true);
+});
 
-	await submit({}, {}, { MAIL_TO: "techs@example.com" });
-	assert.equal(submissions[1].onSuccessDestroyEmail, undefined);
-	assert.equal(submissions[1].onSuccessUpdateEmail["#send"]["mailboxIds/sent"], true);
+// The offer links.
+
+const offerPage = (link: string) => worker.fetch(new Request(link), env);
+const press = (link: string, action: string) =>
+	worker.fetch(new Request(link, { method: "POST", body: new URLSearchParams({ action }) }), env);
+const status = () => (db.sqlite.prepare("SELECT status FROM requests").get() as any).status;
+const both = () => calendars["richard@example.com"].pop(); // frees Richard, so both get holds
+
+test("shows a tech the request without changing anything", async () => {
+	await submit({ slot: iso(slotStart) });
+	const response = await offerPage(linkFor("sam@example.com"));
+	assert.equal(response.status, 200);
+	const body = await response.text();
+	assert.match(body, /New repair request/);
+	assert.match(body, /Loud fan/);
+	assert.match(body, /<form method="post">/);
+	assert.match(body, /value="confirm"/);
+	assert.match(body, /value="decline"/);
+	assert.equal(status(), "pending");
+	assert.equal(patched.length + deleted.length, 0);
+});
+
+test("escapes what the customer wrote on the page", async () => {
+	await submit({ problem: "<script>alert(1)</script>" });
+	const body = await (await offerPage(linkFor("sam@example.com"))).text();
+	assert.ok(!body.includes("<script>alert"));
+	assert.match(body, /&lt;script&gt;/);
+});
+
+test("answers an unknown link with 404", async () => {
+	const response = await offerPage("https://intake.test/offers/00000000-0000-4000-8000-000000000000");
+	assert.equal(response.status, 404);
+});
+
+test("the first tech to take it books it and everyone hears", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	mails = [];
+
+	const response = await press(sam, "confirm");
+	assert.equal(response.status, 303);
+	assert.equal(response.headers.get("Location"), sam);
+	assert.equal(status(), "confirmed");
+
+	// Sam's hold is now the booking; Richard's is gone.
+	assert.equal(patched.length, 1);
+	assert.equal(patched[0].calendarId, "sam@example.com");
+	assert.equal(patched[0].body.status, "confirmed");
+	assert.equal(patched[0].body.summary, "Repair: PS5 deep cleaning (Jane)");
+	assert.deepEqual(deleted, [{ calendarId: "richard@example.com", eventId: "hold1" }]);
+
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "richard@example.com", "contact@perocho.com"]);
+	assert.match(to("jane@example.com")[0].subject, /^Your repair is confirmed/);
+	assert.match(text(to("jane@example.com")[0]), /Sam has confirmed your repair/);
+	assert.match(to("richard@example.com")[0].subject, /^Taken by Sam/);
+
+	// Too late for Richard: nothing changes, and his page says who took it.
+	mails = [];
+	await press(richard, "confirm");
+	await press(richard, "decline");
+	assert.equal(mails.length, 0);
+	assert.equal(patched.length, 1);
+	assert.match(await (await offerPage(richard)).text(), /Sam took this request/);
+	assert.match(await (await offerPage(sam)).text(), /You took this request/);
+});
+
+test("a tech without a hold gets the booking created when they take it", async () => {
+	await submit({ slot: iso(slotStart) }); // Richard was busy, so only Sam holds it
+	await press(linkFor("richard@example.com"), "confirm");
+	const booking = holds.find((hold) => hold.calendarId === "richard@example.com");
+	assert.equal(booking?.body.status, "confirmed");
+	assert.deepEqual(deleted, [{ calendarId: "sam@example.com", eventId: "hold1" }]);
+});
+
+test("taking a request without a time touches no calendar", async () => {
+	await submit({});
+	const sam = linkFor("sam@example.com");
+	mails = [];
+	await press(sam, "confirm");
+	assert.equal(status(), "confirmed");
+	assert.equal(holds.length + patched.length + deleted.length, 0);
+	assert.match(text(to("jane@example.com")[0]), /will be in touch to find a time/);
+});
+
+test("declining only takes that tech out, until nobody's left", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	mails = [];
+
+	await press(richard, "decline");
+	assert.equal(status(), "pending");
+	assert.deepEqual(deleted, [{ calendarId: "richard@example.com", eventId: "hold1" }]);
+	assert.equal(mails.length, 0);
+	assert.match(await (await offerPage(richard)).text(), /You declined this request/);
+
+	await press(sam, "decline");
+	assert.equal(status(), "declined");
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "contact@perocho.com"]);
+	assert.match(to("jane@example.com")[0].subject, /^We can't take your repair request/);
+	assert.match(await (await offerPage(sam)).text(), /Every tech declined/);
+});
+
+test("a tech who declined can still take it while it's open", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const richard = linkFor("richard@example.com");
+	await press(richard, "decline");
+	await press(richard, "confirm");
+	assert.equal(status(), "confirmed");
+	// His hold went when he declined, so the booking is a new event.
+	assert.equal(holds.at(-1)!.calendarId, "richard@example.com");
+	assert.equal(holds.at(-1)!.body.status, "confirmed");
 });
