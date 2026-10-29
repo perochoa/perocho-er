@@ -108,10 +108,13 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 			throw error;
 		}
 
-		// Everyone else's hold goes.
+		// Everyone else's hold goes. One that can't be deleted keeps its id, and the hourly job tries again.
 		const others = offers.filter((other) => other.token !== offer.token && other.hold_id);
 		const results = await Promise.allSettled(
-			others.map((other) => deleteEvent(token, other.calendar_id, other.hold_id!)),
+			others.map(async (other) => {
+				await deleteEvent(token, other.calendar_id, other.hold_id!);
+				await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(other.token).run();
+			}),
 		);
 		for (const result of results) if (result.status === "rejected") console.error(result.reason);
 	}
@@ -128,14 +131,16 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 // Takes only this tech out. Once nobody's left, the customer hears it's a no.
 async function decline(env: Env, { offer, request, intake }: Loaded) {
 	if (request.status !== "pending") return;
-	const changed = await env.DB.prepare("UPDATE offers SET declined = 1, hold_id = NULL WHERE token = ? AND declined = 0")
+	const changed = await env.DB.prepare("UPDATE offers SET declined = 1 WHERE token = ? AND declined = 0")
 		.bind(offer.token)
 		.run();
 	if (changed.meta.changes !== 1) return;
 	if (offer.hold_id) {
 		try {
 			await deleteEvent(await accessToken(env.GOOGLE_SERVICE_ACCOUNT), offer.calendar_id, offer.hold_id);
+			await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ? AND declined = 1").bind(offer.token).run();
 		} catch (error) {
+			// Still on their calendar; the hourly job tries again.
 			console.error(error);
 		}
 	}
@@ -155,7 +160,8 @@ async function decline(env: Env, { offer, request, intake }: Loaded) {
 const UNTIMED_DAYS = 7;
 
 // Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
-// customer, then deletes any hold a settled request left on a calendar.
+// customer, then deletes the holds nobody needs any more: a declined tech's, and every hold but
+// the booking once a request is settled. Holds whose delete failed earlier are among them.
 export async function expire(env: Env, now = Date.now()): Promise<void> {
 	const { results: expired } = await env.DB.prepare(
 		`UPDATE requests SET status = 'expired'
@@ -177,8 +183,8 @@ export async function expire(env: Env, now = Date.now()): Promise<void> {
 
 	const { results: strays } = await env.DB.prepare(
 		`SELECT offers.* FROM offers JOIN requests ON requests.id = offers.request_id
-		 WHERE offers.hold_id IS NOT NULL AND requests.status != 'pending'
-		 AND offers.token IS NOT requests.confirmed_by`,
+		 WHERE offers.hold_id IS NOT NULL AND offers.token IS NOT requests.confirmed_by
+		 AND (offers.declined = 1 OR requests.status != 'pending')`,
 	).all<OfferRow>();
 	if (strays.length === 0) return;
 	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);

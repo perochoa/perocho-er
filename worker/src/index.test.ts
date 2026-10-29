@@ -708,6 +708,40 @@ test("expires a request nobody took once its time starts, and lets the holds go"
 	assert.equal(deleted.length, 2);
 });
 
+// Runs `f` with Google failing every `method` request, and errors kept off the test output.
+const withFailing = async (method: string, f: () => Promise<unknown>) => {
+	const [restore, original] = [failing(method), console.error];
+	console.error = () => {};
+	try {
+		await f();
+	} finally {
+		restore();
+		console.error = original;
+	}
+};
+
+test("the hourly job deletes a declined tech's hold that couldn't be deleted at the time", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await withFailing("DELETE", () => press(linkFor("richard@example.com"), "decline"));
+	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
+	await tick();
+	assert.deepEqual(holdIds(), [null, "hold2"]);
+	assert.ok(!calendars["richard@example.com"].some((e: any) => e.id === "hold1"));
+});
+
+test("the hourly job deletes another tech's hold that couldn't be deleted when one took it", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await withFailing("DELETE", () => press(linkFor("sam@example.com"), "confirm"));
+	assert.equal(status(), "confirmed");
+	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
+	await tick();
+	assert.deepEqual(holdIds(), [null, "hold2"]);
+	assert.ok(!calendars["richard@example.com"].some((e: any) => e.id === "hold1"));
+	assert.ok(calendars["sam@example.com"].some((e: any) => e.id === "hold2"));
+});
+
 test("expires a request without a time after a week", async () => {
 	await submit({});
 	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - 6 * 24 * hour);
