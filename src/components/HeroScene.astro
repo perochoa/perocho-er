@@ -1,0 +1,314 @@
+---
+// A first-person grid floor behind the hero, steered by the joystick's `joystick:input` events.
+interface Props {
+	class?: string;
+}
+
+const { class: className } = Astro.props;
+---
+
+<canvas class:list={["hero-scene", className]} aria-hidden="true"></canvas>
+
+<style>
+	.hero-scene {
+		position: absolute;
+		inset: 0;
+		z-index: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+	}
+</style>
+
+<script>
+	type Source = "drift" | "user";
+	type Colours = { line: string; accent: string; muted: string };
+
+	// World units: one grid square is 1 x 1 and the eye sits 1 above the floor.
+	const REACH = 30; // how far out the grid is drawn; the horizon fade has hidden everything beyond it
+	const NEAR = 0.15;
+	const MAX_SPEED = 3.2; // squares per second at full stick
+	const MAX_TURN = 0.85; // radians per second at full stick
+	const EASE = 3; // how quickly the camera catches up with the stick; lower feels heavier
+	const REDUCED_SCALE = 0.3;
+	const PULSE_SECONDS = 1.4;
+	const DOT_COUNT = 110;
+
+	const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+	const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+	const mod = (n: number, m: number) => ((n % m) + m) % m;
+
+	// A fixed seed, so the sky is the same on every visit and in every screenshot.
+	function random(seed: number) {
+		return () => {
+			seed = (seed + 0x6d2b79f5) | 0;
+			let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+			t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+			return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+		};
+	}
+
+	function makeDots() {
+		const rand = random(7);
+		return Array.from({ length: DOT_COUNT }, () => ({
+			u: rand(),
+			// Squared, so most dots gather near the horizon and the sky above the heading stays quiet.
+			e: rand() ** 2,
+			// Nearer layers slide further when turning, which reads as depth.
+			k: 0.55 + rand() * 0.45,
+			r: 0.6 + rand() * 0.9,
+			accent: rand() < 0.12,
+		}));
+	}
+
+	function setup(canvas: HTMLCanvasElement) {
+		const ctx = canvas.getContext("2d");
+		if (!ctx) return;
+
+		const dots = makeDots();
+		let colours: Colours = { line: "", accent: "", muted: "" };
+		let width = 0;
+		let height = 0;
+		let dpr = 1;
+
+		const input = { x: 0, y: 0, source: "user" as Source };
+		const cam = { x: 0, z: 0, yaw: 0, speed: 0, turn: 0 };
+		let pulse = 0;
+		let reduced = reducedQuery.matches;
+		let onScreen = true;
+		let frame = 0;
+		let last = 0;
+
+		const readColours = () => {
+			const style = getComputedStyle(canvas);
+			const get = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+			colours = {
+				line: get("--line", "#d9e2e1"),
+				accent: get("--accent", "#0f766e"),
+				muted: get("--muted", "#566866"),
+			};
+		};
+
+		const draw = () => {
+			if (!width || !height) return;
+			ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+			ctx.globalCompositeOperation = "source-over";
+			ctx.globalAlpha = 1;
+			ctx.clearRect(0, 0, width, height);
+
+			const wide = width >= 800;
+			// On wide screens the vanishing point sits behind the right column, away from the text.
+			const cx = width * (wide ? 0.66 : 0.5);
+			const horizon = Math.round(height * 0.6);
+			const focal = Math.max(width, height) * 0.55;
+
+			// Floor: a real grid seen from the camera, so turning swings the lines round the vanishing point.
+			const cos = Math.cos(cam.yaw);
+			const sin = Math.sin(cam.yaw);
+			const ox = mod(cam.x, 1);
+			const oz = mod(cam.z, 1);
+			const segment = (ax: number, az: number, bx: number, bz: number) => {
+				let x1 = ax * cos - az * sin;
+				let z1 = ax * sin + az * cos;
+				let x2 = bx * cos - bz * sin;
+				let z2 = bx * sin + bz * cos;
+				if (z1 < NEAR && z2 < NEAR) return;
+				if (z1 < NEAR) {
+					const t = (NEAR - z1) / (z2 - z1);
+					x1 += (x2 - x1) * t;
+					z1 = NEAR;
+				} else if (z2 < NEAR) {
+					const t = (NEAR - z2) / (z1 - z2);
+					x2 += (x1 - x2) * t;
+					z2 = NEAR;
+				}
+				ctx.moveTo(cx + (focal * x1) / z1, horizon + focal / z1);
+				ctx.lineTo(cx + (focal * x2) / z2, horizon + focal / z2);
+			};
+
+			ctx.beginPath();
+			for (let i = -REACH; i <= REACH; i++) {
+				segment(i - ox, -REACH, i - ox, REACH);
+				segment(-REACH, i - oz, REACH, i - oz);
+			}
+			const stroke = ctx.createLinearGradient(0, horizon, 0, height);
+			stroke.addColorStop(0, colours.accent);
+			stroke.addColorStop(0.35, colours.line);
+			ctx.strokeStyle = stroke;
+			ctx.lineWidth = 1;
+			ctx.stroke();
+			if (pulse > 0) {
+				ctx.globalAlpha = 0.55 * pulse * pulse;
+				ctx.strokeStyle = colours.accent;
+				ctx.stroke();
+				ctx.globalAlpha = 1;
+			}
+
+			// Fade the floor out with distance: the far lines bunch up at the horizon and would read as noise.
+			const fade = ctx.createLinearGradient(0, horizon, 0, height);
+			// It starts where the grid runs out, so its far edge never shows as a hard line.
+			const far = Math.min(0.5, focal / REACH / (height - horizon));
+			fade.addColorStop(0, "rgba(0,0,0,0)");
+			fade.addColorStop(far, "rgba(0,0,0,0)");
+			fade.addColorStop(far + (1 - far) * 0.25, "rgba(0,0,0,0.25)");
+			fade.addColorStop(far + (1 - far) * 0.6, "rgba(0,0,0,0.75)");
+			fade.addColorStop(1, "rgba(0,0,0,1)");
+			ctx.globalCompositeOperation = "destination-in";
+			ctx.fillStyle = fade;
+			ctx.fillRect(0, 0, width, height);
+			ctx.globalCompositeOperation = "source-over";
+
+			// A faint accent horizon, strongest at the vanishing point.
+			const glow = ctx.createLinearGradient(0, 0, width, 0);
+			const at = cx / width;
+			glow.addColorStop(0, "rgba(0,0,0,0)");
+			glow.addColorStop(at, colours.accent);
+			glow.addColorStop(1, "rgba(0,0,0,0)");
+			ctx.globalAlpha = 0.22 + 0.4 * pulse * pulse;
+			ctx.fillStyle = glow;
+			ctx.fillRect(0, horizon, width, 1);
+
+			// Sky dots: they only slide sideways, so they are what makes a turn visible near the horizon.
+			const period = Math.max(width * 1.6, 900);
+			const spill = (period - width) / 2;
+			for (const dot of dots) {
+				const x = mod(dot.u * period - cam.yaw * focal * dot.k, period) - spill;
+				if (x < -2 || x > width + 2) continue;
+				const y = horizon - 6 - dot.e * (horizon - 6) * 0.9;
+				ctx.globalAlpha = (dot.accent ? 0.45 : 0.7) * (1 - dot.e) * dot.k;
+				ctx.fillStyle = dot.accent ? colours.accent : colours.muted;
+				ctx.beginPath();
+				ctx.arc(x, y, dot.r, 0, Math.PI * 2);
+				ctx.fill();
+			}
+			ctx.globalAlpha = 1;
+
+			// Keep the text clear: thin the scene out under the copy on the left and towards the top.
+			ctx.globalCompositeOperation = "destination-out";
+			if (wide) {
+				const left = ctx.createLinearGradient(0, 0, width * 0.62, 0);
+				left.addColorStop(0, "rgba(0,0,0,0.65)");
+				left.addColorStop(1, "rgba(0,0,0,0)");
+				ctx.fillStyle = left;
+			} else {
+				ctx.fillStyle = "rgba(0,0,0,0.45)";
+			}
+			ctx.fillRect(0, 0, width, height);
+			const top = ctx.createLinearGradient(0, 0, 0, horizon);
+			top.addColorStop(0, "rgba(0,0,0,0.9)");
+			top.addColorStop(0.6, "rgba(0,0,0,0.25)");
+			top.addColorStop(1, "rgba(0,0,0,0)");
+			ctx.fillStyle = top;
+			ctx.fillRect(0, 0, width, horizon);
+			ctx.globalCompositeOperation = "source-over";
+		};
+
+		const tick = (now: number) => {
+			const dt = Math.min((now - last) / 1000, 0.05);
+			last = now;
+
+			const scale = reduced ? REDUCED_SCALE : 1;
+			const targetSpeed = input.y * MAX_SPEED * scale;
+			const targetTurn = input.x * MAX_TURN * scale;
+			// Ease velocity, not position, so letting go of the stick coasts to a stop.
+			const ease = 1 - Math.exp(-EASE * dt);
+			cam.speed += (targetSpeed - cam.speed) * ease;
+			cam.turn += (targetTurn - cam.turn) * ease;
+			cam.yaw += cam.turn * dt;
+			cam.x += Math.sin(cam.yaw) * cam.speed * dt;
+			cam.z += Math.cos(cam.yaw) * cam.speed * dt;
+			// The grid repeats every square, so keeping the position small loses nothing and avoids float drift.
+			cam.x = mod(cam.x, 1);
+			cam.z = mod(cam.z, 1);
+			cam.yaw = mod(cam.yaw, Math.PI * 2);
+			pulse = Math.max(0, pulse - dt / PULSE_SECONDS);
+
+			const settled =
+				targetSpeed === 0 &&
+				targetTurn === 0 &&
+				Math.abs(cam.speed) < 0.002 &&
+				Math.abs(cam.turn) < 0.0005 &&
+				pulse === 0;
+			if (settled) {
+				cam.speed = 0;
+				cam.turn = 0;
+			}
+
+			draw();
+			frame = settled || !running() ? 0 : requestAnimationFrame(tick);
+		};
+
+		const running = () => onScreen && !document.hidden;
+
+		const wake = () => {
+			if (frame || !running()) return;
+			last = performance.now();
+			frame = requestAnimationFrame(tick);
+		};
+
+		const sleep = () => {
+			cancelAnimationFrame(frame);
+			frame = 0;
+		};
+
+		const resize = () => {
+			const rect = canvas.getBoundingClientRect();
+			dpr = Math.min(window.devicePixelRatio || 1, 2);
+			width = rect.width;
+			height = rect.height;
+			canvas.width = Math.round(width * dpr);
+			canvas.height = Math.round(height * dpr);
+			draw();
+		};
+
+		window.addEventListener("joystick:input", (event) => {
+			const detail = (event as CustomEvent<{ x: number; y: number; source: Source }>).detail;
+			if (!detail) return;
+			// A drifting stick is the problem being shown off; with reduced motion it shouldn't move anything.
+			if (reduced && detail.source === "drift") {
+				input.x = 0;
+				input.y = 0;
+			} else {
+				input.x = Math.max(-1, Math.min(1, detail.x || 0));
+				input.y = Math.max(-1, Math.min(1, detail.y || 0));
+			}
+			input.source = detail.source;
+			wake();
+		});
+
+		window.addEventListener("joystick:fixed", () => {
+			pulse = 1;
+			wake();
+		});
+
+		reducedQuery.addEventListener("change", () => {
+			reduced = reducedQuery.matches;
+			if (reduced && input.source === "drift") {
+				input.x = 0;
+				input.y = 0;
+			}
+			wake();
+		});
+
+		darkQuery.addEventListener("change", () => {
+			readColours();
+			draw();
+		});
+
+		document.addEventListener("visibilitychange", () => (document.hidden ? sleep() : wake()));
+
+		new IntersectionObserver(([entry]) => {
+			onScreen = entry.isIntersecting;
+			if (onScreen) wake();
+			else sleep();
+		}).observe(canvas);
+
+		new ResizeObserver(resize).observe(canvas);
+
+		readColours();
+		resize();
+	}
+
+	document.querySelectorAll<HTMLCanvasElement>("canvas.hero-scene").forEach(setup);
+</script>
