@@ -1,0 +1,372 @@
+---
+// The logo's idea drawn large, and playable: the stick drifts toward the worn ring until it's fixed.
+// Without JS it's the static drawing. Emits `joystick:input` ({ x, y, source }) and `joystick:fixed`
+// on window, so other parts of the page can react to it.
+interface Props {
+	// Where the "fixing a real one" link points after the fix; pass "" to leave it out.
+	requestHref?: string;
+}
+
+const { requestHref = "/request/" } = Astro.props;
+---
+
+<div class="joystick">
+	<svg class="drift" viewBox="0 0 320 320" aria-hidden="true">
+		<circle cx="160" cy="160" r="150" class="housing"></circle>
+		<circle cx="160" cy="160" r="104" class="range"></circle>
+		<circle cx="160" cy="160" r="58" class="range"></circle>
+		<path d="M160 22v276M22 160h276" class="cross"></path>
+		<path d="M160 160 Q 200 150 214 106" class="trail"></path>
+		<circle cx="214" cy="106" r="46" class="worn"></circle>
+		<g class="stick">
+			<circle cx="160" cy="160" r="50" class="fixed"></circle>
+			<circle cx="160" cy="160" r="20" class="nub"></circle>
+		</g>
+	</svg>
+	<button type="button" class="fix" hidden>Fix the drift</button>
+	<p class="status" aria-live="polite" aria-atomic="true" tabindex="-1">
+		<span data-status-text></span>
+		{requestHref && " "}
+		{requestHref && <a href={requestHref} hidden>Fixing a real one?</a>}
+	</p>
+</div>
+
+<script>
+	type Vec = { x: number; y: number };
+
+	const C = 160;
+	// Full deflection in viewBox units: the cap (r=50) stays inside the housing (r=150).
+	const MAX = 98;
+	// The worn stick creeps up and right, about a third of full travel.
+	const BASE: Vec = { x: 0.25, y: 0.25 };
+	// The worn ring sits further out along the drift, where the logo draws it.
+	const WORN_REACH = 2.2;
+	const KEYS: Record<string, Vec> = {
+		arrowup: { x: 0, y: 1 },
+		w: { x: 0, y: 1 },
+		arrowdown: { x: 0, y: -1 },
+		s: { x: 0, y: -1 },
+		arrowleft: { x: -1, y: 0 },
+		a: { x: -1, y: 0 },
+		arrowright: { x: 1, y: 0 },
+		d: { x: 1, y: 0 },
+	};
+
+	const clamp = (v: Vec): Vec => {
+		const length = Math.hypot(v.x, v.y);
+		return length > 1 ? { x: v.x / length, y: v.y / length } : v;
+	};
+
+	// A few slow sines that never quite repeat: reads as wear, not as a loop.
+	const wander = (t: number): Vec => ({
+		x: BASE.x + 0.035 * Math.sin(t * 0.41) + 0.02 * Math.sin(t * 1.07 + 1.3),
+		y: BASE.y + 0.03 * Math.sin(t * 0.53 + 2.1) + 0.02 * Math.sin(t * 0.89 + 0.4),
+	});
+
+	function setup(root: HTMLElement) {
+		const svg = root.querySelector<SVGSVGElement>("svg")!;
+		const stick = svg.querySelector<SVGGElement>(".stick")!;
+		const worn = svg.querySelector<SVGCircleElement>(".worn")!;
+		const trail = svg.querySelector<SVGPathElement>(".trail")!;
+		const button = root.querySelector<HTMLButtonElement>(".fix")!;
+		const status = root.querySelector<HTMLElement>(".status")!;
+		const motion = matchMedia("(prefers-reduced-motion: reduce)");
+
+		svg.removeAttribute("aria-hidden");
+		svg.setAttribute("role", "application");
+		svg.setAttribute("aria-label", "Joystick. Drag it, or hold the arrow keys.");
+		svg.tabIndex = 0;
+		button.hidden = false;
+
+		// Normalised, y up. The stick starts centred and creeps out to the drift on load.
+		let pos: Vec = { x: 0, y: 0 };
+		let vel: Vec = { x: 0, y: 0 };
+		let rest: Vec = { ...BASE };
+		let grab: Vec = { x: 0, y: 0 };
+		let sent: (Vec & { source: string }) | null = null;
+		let fixed = false;
+		let dragging = false;
+		let userActive = false;
+		let onScreen = true;
+		let driftTime = 0;
+		let last = 0;
+		let frame = 0;
+		const keys = new Set<string>();
+
+		const wandering = () => !fixed && !motion.matches && onScreen && !document.hidden;
+
+		const goal = (): Vec => {
+			if (dragging) return pos;
+			if (keys.size === 0) return rest;
+			const sum = [...keys].reduce((v, key) => ({ x: v.x + KEYS[key].x, y: v.y + KEYS[key].y }), { x: 0, y: 0 });
+			const length = Math.hypot(sum.x, sum.y);
+			return length ? { x: sum.x / length, y: sum.y / length } : rest;
+		};
+
+		const draw = () => {
+			stick.setAttribute("transform", `translate(${pos.x * MAX} ${-pos.y * MAX})`);
+			const ex = rest.x * MAX * WORN_REACH;
+			const ey = -rest.y * MAX * WORN_REACH;
+			worn.setAttribute("cx", String(C + ex));
+			worn.setAttribute("cy", String(C + ey));
+			// Same bow as the static drawing's trail, turned to follow the drift.
+			const qx = C + ex / 2 - 0.28 * ey;
+			const qy = C + ey / 2 + 0.28 * ex;
+			trail.setAttribute("d", `M${C} ${C} Q ${qx} ${qy} ${C + ex} ${C + ey}`);
+		};
+
+		const emit = () => {
+			const source = dragging || keys.size || userActive ? "user" : "drift";
+			if (sent && sent.x === pos.x && sent.y === pos.y && sent.source === source) return;
+			sent = { ...pos, source };
+			window.dispatchEvent(new CustomEvent("joystick:input", { detail: { x: pos.x, y: pos.y, source } }));
+		};
+
+		const tick = (now: number) => {
+			const dt = last ? Math.min((now - last) / 1000, 1 / 30) : 0;
+			last = now;
+			frame = 0;
+
+			if (fixed) rest = { x: 0, y: 0 };
+			else if (motion.matches) rest = { ...BASE };
+			else if (wandering()) rest = wander((driftTime += dt));
+
+			const target = goal();
+			if (!dragging) {
+				if (motion.matches) {
+					pos = { ...target };
+					vel = { x: 0, y: 0 };
+				} else {
+					// A firm, slightly bouncy spring after a release; a slow, damped one for the creep.
+					const k = userActive ? 170 : 6;
+					const c = 2 * Math.sqrt(k) * (userActive ? 0.6 : 1);
+					vel.x += (k * (target.x - pos.x) - c * vel.x) * dt;
+					vel.y += (k * (target.y - pos.y) - c * vel.y) * dt;
+					pos = clamp({ x: pos.x + vel.x * dt, y: pos.y + vel.y * dt });
+				}
+			}
+
+			const settled =
+				dragging ||
+				(Math.hypot(target.x - pos.x, target.y - pos.y) < 1e-3 && Math.hypot(vel.x, vel.y) < 1e-3);
+			if (settled && !dragging) {
+				pos = { ...target };
+				vel = { x: 0, y: 0 };
+			}
+			// Hand back to the drift once the release has played out; the drift target keeps moving,
+			// so waiting for a full settle would leave the source stuck on "user". This runs before
+			// emit() so the resting value goes out as "drift", not "user".
+			const near = Math.hypot(target.x - pos.x, target.y - pos.y) < 0.01 && Math.hypot(vel.x, vel.y) < 0.05;
+			if (userActive && !dragging && keys.size === 0 && (settled || (near && !fixed))) userActive = false;
+			draw();
+			emit();
+
+			if (wandering() || !settled) frame = requestAnimationFrame(tick);
+			else last = 0;
+		};
+
+		const schedule = () => {
+			if (!frame) frame = requestAnimationFrame(tick);
+		};
+
+		const toStick = (event: PointerEvent): Vec => {
+			const point = new DOMPoint(event.clientX, event.clientY).matrixTransform(svg.getScreenCTM()!.inverse());
+			return { x: (point.x - C) / MAX, y: (C - point.y) / MAX };
+		};
+
+		// Only a touch on the stick itself should stop the page scrolling; a swipe across the rest of
+		// the housing still scrolls. Chrome ignores `touch-action` on SVG children, hence the listener.
+		stick.addEventListener("touchstart", (event) => event.preventDefault(), { passive: false });
+		stick.addEventListener("pointerdown", (event) => {
+			if (event.button !== 0) return;
+			event.preventDefault();
+			stick.setPointerCapture(event.pointerId);
+			// Keep the grab point under the finger so the stick doesn't jump to it.
+			const point = toStick(event);
+			grab = { x: point.x - pos.x, y: point.y - pos.y };
+			dragging = true;
+			userActive = true;
+			vel = { x: 0, y: 0 };
+			root.classList.add("is-dragging");
+		});
+		stick.addEventListener("pointermove", (event) => {
+			if (!dragging) return;
+			const point = toStick(event);
+			pos = clamp({ x: point.x - grab.x, y: point.y - grab.y });
+			schedule();
+		});
+		const release = () => {
+			if (!dragging) return;
+			dragging = false;
+			root.classList.remove("is-dragging");
+			schedule();
+		};
+		stick.addEventListener("pointerup", release);
+		stick.addEventListener("pointercancel", release);
+		stick.addEventListener("lostpointercapture", release);
+
+		svg.addEventListener("keydown", (event) => {
+			const key = event.key.toLowerCase();
+			if (!(key in KEYS) || event.ctrlKey || event.metaKey || event.altKey) return;
+			event.preventDefault();
+			keys.add(key);
+			userActive = true;
+			schedule();
+		});
+		svg.addEventListener("keyup", (event) => {
+			if (keys.delete(event.key.toLowerCase())) schedule();
+		});
+		svg.addEventListener("blur", () => {
+			keys.clear();
+			schedule();
+		});
+
+		button.addEventListener("click", () => {
+			fixed = true;
+			userActive = true;
+			root.classList.add("is-fixed");
+			status.querySelector("[data-status-text]")!.textContent = "Drift fixed. Most fixes take about an hour.";
+			status.querySelector("a")?.removeAttribute("hidden");
+			// The button is going away; don't drop keyboard focus on the floor.
+			if (document.activeElement === button) status.focus();
+			button.hidden = true;
+			window.dispatchEvent(new CustomEvent("joystick:fixed"));
+			schedule();
+		});
+
+		new IntersectionObserver(([entry]) => {
+			onScreen = entry.isIntersecting;
+			schedule();
+		}).observe(svg);
+		document.addEventListener("visibilitychange", schedule);
+		motion.addEventListener("change", schedule);
+		schedule();
+	}
+
+	document.querySelectorAll<HTMLElement>(".joystick").forEach(setup);
+</script>
+
+<style>
+	.joystick {
+		display: grid;
+		justify-items: center;
+		width: 100%;
+		max-width: 22rem;
+		justify-self: center;
+	}
+	.drift {
+		width: 100%;
+		border-radius: 50%;
+	}
+	.drift .housing {
+		fill: var(--surface);
+		stroke: var(--line);
+		stroke-width: 2;
+	}
+	.drift .range {
+		fill: none;
+		stroke: var(--line);
+		stroke-width: 1.5;
+		stroke-dasharray: 4 6;
+	}
+	.drift .cross {
+		stroke: var(--line);
+		stroke-width: 1.5;
+	}
+	.drift .trail {
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 2;
+		stroke-dasharray: 3 6;
+		opacity: 0.5;
+	}
+	.drift .worn {
+		fill: none;
+		stroke: var(--accent);
+		stroke-width: 8;
+		opacity: 0.35;
+	}
+	.drift .trail,
+	.drift .worn {
+		pointer-events: none;
+		transition: opacity 0.4s ease-out;
+	}
+	.drift .fixed {
+		fill: var(--accent);
+	}
+	.drift .nub {
+		fill: var(--on-accent);
+		opacity: 0.18;
+	}
+	.drift[role="application"] .stick {
+		cursor: grab;
+	}
+	.is-dragging .drift,
+	.is-dragging .drift .stick {
+		cursor: grabbing;
+	}
+	.is-fixed .drift .trail,
+	.is-fixed .drift .worn {
+		opacity: 0;
+	}
+	.is-fixed .drift .housing {
+		animation: recalibrate 0.6s ease-out;
+	}
+	@keyframes recalibrate {
+		30% {
+			stroke: var(--accent);
+			stroke-width: 6;
+		}
+	}
+	.fix {
+		margin-top: 1rem;
+		padding: 0.375rem 0.875rem;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+		color: var(--ink);
+		font-family: var(--font-mono);
+		font-size: 0.8125rem;
+		cursor: pointer;
+	}
+	.fix:hover {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.fix[hidden] {
+		display: none;
+	}
+	.status {
+		margin: 0;
+		font-family: var(--font-mono);
+		font-size: 0.8125rem;
+		color: var(--muted);
+		text-align: center;
+	}
+	.is-fixed .status {
+		margin-top: 1rem;
+	}
+	.status:focus {
+		outline: none;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.drift .trail,
+		.drift .worn {
+			transition: none;
+		}
+		.is-fixed .drift .housing {
+			animation: none;
+		}
+	}
+	@media (max-width: 48rem) {
+		.joystick {
+			max-width: 13rem;
+			order: -1;
+			justify-self: start;
+			justify-items: start;
+		}
+		.status {
+			text-align: start;
+		}
+	}
+</style>
