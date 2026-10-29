@@ -1,0 +1,14 @@
+---
+// "Worn and fixed": the faint ring is where the worn stick drifted, the solid disc is the fixed one.
+// Drawn in currentColor, so it takes the accent from its parent.
+interface Props {
+	size?: string;
+}
+
+const { size = "2rem" } = Astro.props;
+---
+
+<svg viewBox="0 0 64 64" width={size} height={size} aria-hidden="true">
+	<circle cx="38" cy="26" r="15" fill="none" stroke="currentColor" stroke-width="5" opacity=".45"></circle>
+	<circle cx="28" cy="36" r="15" fill="currentColor"></circle>
+</svg>
