@@ -29,6 +29,7 @@ const env = {
 		private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
 	}),
 	FASTMAIL_TOKEN: "fm-token",
+	REQUEST_LIMITER: { limit: async () => ({ success: true }) },
 };
 
 const iso = (ms: number) => new Date(ms).toISOString();
