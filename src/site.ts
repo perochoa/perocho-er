@@ -30,6 +30,6 @@ export const site: Site = {
 		stars: 5,
 		ratings: 75,
 	},
-	serviceArea: "Mississauga. Drop off near Tomken & Rathburn, or we come to you.",
+	serviceArea: "Mississauga. Drop off, or we come to you. Message us for details.",
 	// TODO: hours (DECISIONS.md, open question 2).
 };
