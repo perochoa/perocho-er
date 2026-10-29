@@ -5,12 +5,13 @@
 //                        site (the form works without JS)
 //   GET  /offers/<token> one tech's link to a request: shows it, with buttons to take or decline it
 //   POST /offers/<token> those buttons
+// and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time.
 
-import { sendMail } from "./fastmail.ts";
+import { MailError, sendMail } from "./fastmail.ts";
 import { accessToken, createEvent, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
-import { act, page } from "./offers.ts";
+import { act, expire, page } from "./offers.ts";
 import { blocks, openSlots, type Slot } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
@@ -162,13 +163,25 @@ async function hold(env: Env, token: string, offer: Offer, slot: Slot, intake: I
 			return null;
 		}
 	} catch (error) {
-		// Our hold is written, so keep it; at worst the tech sees two holds.
+		// Our hold is written, so keep it; at worst the tech sees two holds. That includes one that
+		// lost but couldn't be deleted: once the request is settled the hourly job deletes it, and
+		// whichever request a tech takes first, they can't take the other too.
 		console.error(error);
 	}
 	return ours.id;
 }
 
+// How long the same form sent again counts as the request already filed.
+const REPEAT_MS = 10 * 60_000;
+
 async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> {
+	// A double press, or the form sent again from the back button, is the request already filed:
+	// filing it again would find its own hold and say "taken", or email everyone twice.
+	const repeat = await env.DB.prepare("SELECT 1 FROM requests WHERE intake = ? AND created > ?")
+		.bind(JSON.stringify(intake), Date.now() - REPEAT_MS)
+		.first();
+	if (repeat) return "sent";
+
 	const techs = parseTechs(env.TECHS);
 	const offers: Offer[] = techs.map((tech) => ({ token: crypto.randomUUID(), tech, holdId: null }));
 	const link = (offer: Offer) => `${origin}/offers/${offer.token}`;
@@ -233,10 +246,11 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 			].map((mail) => ({ from: env.MAIL_FROM, ...mail })),
 		);
 	} catch (error) {
-		// Without a hold the emails were the only way the techs would hear of it. With one, its
-		// description has every detail and the tech's link, and sending them to "failed" would
-		// make a retry find their own hold and say "taken".
-		if (holds.length === 0) {
+		// Without a hold the emails were the only way the techs would hear of it, so if none went out
+		// it's as if it never came in. With a hold, its description has every detail and the tech's
+		// link, and sending them to "failed" would make a retry find their own hold and say "taken".
+		// Once some went out, their links have to keep working.
+		if (holds.length === 0 && !(error instanceof MailError && error.sent)) {
 			await db.batch([
 				db.prepare("DELETE FROM offers WHERE request_id = ?").bind(id),
 				db.prepare("DELETE FROM requests WHERE id = ?").bind(id),
@@ -265,7 +279,9 @@ export default {
 			const offer = pathname.match(OFFER);
 			if (offer && req.method === "GET") return await page(env, offer[1]);
 			if (offer && req.method === "POST") {
-				await act(env, offer[1], String((await req.formData()).get("action") ?? ""));
+				// A body that isn't a form is a press of no button.
+				const form = await req.formData().catch(() => null);
+				await act(env, offer[1], String(form?.get("action") ?? ""));
 				// Back to the page, which now shows where the request stands.
 				return Response.redirect(req.url, 303);
 			}
@@ -273,7 +289,14 @@ export default {
 		} catch (error) {
 			console.error(error);
 			if (pathname === "/request") return Response.redirect(`${env.SITE_URL}/request/failed/`, 303);
+			if (OFFER.test(pathname)) {
+				return new Response("Something went wrong, so nothing changed. Go back and try again.", { status: 500 });
+			}
 			return new Response("Something went wrong", { status: 500 });
 		}
+	},
+
+	async scheduled(_controller, env): Promise<void> {
+		await expire(env);
 	},
 } satisfies ExportedHandler<Env>;

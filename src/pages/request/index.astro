@@ -114,6 +114,12 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	const form = document.querySelector<HTMLFormElement>("form[data-slots]");
 
 	if (form) {
+		// One request per press: a second one would come back "taken", beaten by the first. The back
+		// button brings the page back as it was left, so turn the button on again then.
+		const send = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+		form.addEventListener("submit", () => (send.disabled = true));
+		window.addEventListener("pageshow", () => (send.disabled = false));
+
 		// Without JS the form still works; people put the times that suit them in the notes.
 		const field = form.querySelector<HTMLElement>("[data-slot-field]")!;
 		const days = field.querySelector<HTMLElement>("[data-days]")!;

@@ -12,7 +12,7 @@ interface RequestRow {
 	intake: string;
 	slot_start: number | null;
 	slot_end: number | null;
-	status: "pending" | "confirmed" | "declined";
+	status: "pending" | "confirmed" | "declined" | "expired";
 	confirmed_by: string | null;
 }
 
@@ -53,12 +53,29 @@ const send = async (env: Env, mails: Omit<Mail, "from">[]) => {
 	}
 };
 
+// Once the time has started nobody can take it; the scheduled job expires it.
+const passed = (request: RequestRow, now = Date.now()) => request.slot_start !== null && request.slot_start <= now;
+
+// Another repair the tech has taken at the same time. Their other events don't count: a tech
+// who was busy can still take a request and move what was there.
+const CLASH = `SELECT 1 FROM requests other JOIN offers mine ON mine.token = other.confirmed_by
+	WHERE other.status = 'confirmed' AND other.id != ?1 AND mine.calendar_id = ?2
+	AND other.slot_start < ?3 AND other.slot_end > ?4`;
+
+const clashes = async (db: D1Database, offer: OfferRow, request: RequestRow) =>
+	request.slot_start !== null &&
+	(await db.prepare(CLASH).bind(request.id, offer.calendar_id, request.slot_end, request.slot_start).first()) !== null;
+
 // First tech to get here takes it. A tech who declined can still change their mind while it's open.
 async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
+	// The clash is checked in the same statement, so the same tech taking two requests at once
+	// can't win both.
 	const won = await env.DB.prepare(
-		"UPDATE requests SET status = 'confirmed', confirmed_by = ?1 WHERE id = ?2 AND status = 'pending'",
+		`UPDATE requests SET status = 'confirmed', confirmed_by = ?5
+		 WHERE id = ?1 AND status = 'pending'
+		 AND (slot_start IS NULL OR (slot_start > ?6 AND NOT EXISTS (${CLASH})))`,
 	)
-		.bind(offer.token, request.id)
+		.bind(request.id, offer.calendar_id, request.slot_end, request.slot_start, offer.token, Date.now())
 		.run();
 	if (won.meta.changes !== 1) return;
 	await env.DB.prepare("UPDATE offers SET declined = 0 WHERE token = ?").bind(offer.token).run();
@@ -66,31 +83,40 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	const time = timeOf(env, request);
 	if (time !== null) {
 		// Their hold becomes the booking, or they get a new one if they weren't free when it came
-		// in, had declined, or deleted the hold. Everyone else's hold goes.
+		// in, had declined, or deleted the hold.
+		let token: string;
 		try {
-			const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+			token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
 			const booking = {
 				summary: notices.bookedSummary(intake),
 				description: notices.bookedDescription(intake, time, offer.name),
 			};
-			const book = async () => {
-				if (offer.hold_id && (await bookEvent(token, offer.calendar_id, offer.hold_id, booking))) return;
+			if (!offer.hold_id || !(await bookEvent(token, offer.calendar_id, offer.hold_id, booking))) {
 				await createEvent(
 					token,
 					offer.calendar_id,
 					{ ...booking, start: request.slot_start!, end: request.slot_end!, timeZone: env.TIME_ZONE },
 					true,
 				);
-			};
-			const others = offers.filter((other) => other.token !== offer.token && other.hold_id);
-			const results = await Promise.allSettled([
-				book(),
-				...others.map((other) => deleteEvent(token, other.calendar_id, other.hold_id!)),
-			]);
-			for (const result of results) if (result.status === "rejected") console.error(result.reason);
+			}
 		} catch (error) {
-			console.error(error);
+			// Not on their calendar, so nobody has it yet: open it again before anyone is told, and the
+			// error page tells the tech to try again.
+			await env.DB.prepare("UPDATE requests SET status = 'pending', confirmed_by = NULL WHERE id = ? AND confirmed_by = ?")
+				.bind(request.id, offer.token)
+				.run();
+			throw error;
 		}
+
+		// Everyone else's hold goes. One that can't be deleted keeps its id, and the hourly job tries again.
+		const others = offers.filter((other) => other.token !== offer.token && other.hold_id);
+		const results = await Promise.allSettled(
+			others.map(async (other) => {
+				await deleteEvent(token, other.calendar_id, other.hold_id!);
+				await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(other.token).run();
+			}),
+		);
+		for (const result of results) if (result.status === "rejected") console.error(result.reason);
 	}
 
 	await send(env, [
@@ -105,14 +131,21 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 // Takes only this tech out. Once nobody's left, the customer hears it's a no.
 async function decline(env: Env, { offer, request, intake }: Loaded) {
 	if (request.status !== "pending") return;
-	const changed = await env.DB.prepare("UPDATE offers SET declined = 1, hold_id = NULL WHERE token = ? AND declined = 0")
-		.bind(offer.token)
+	// Checked again here, not only on what was loaded: had they just taken it in another tab, their
+	// hold is now the booking and mustn't be deleted.
+	const changed = await env.DB.prepare(
+		`UPDATE offers SET declined = 1 WHERE token = ?1 AND declined = 0
+		 AND (SELECT status FROM requests WHERE id = ?2) = 'pending'`,
+	)
+		.bind(offer.token, request.id)
 		.run();
 	if (changed.meta.changes !== 1) return;
 	if (offer.hold_id) {
 		try {
 			await deleteEvent(await accessToken(env.GOOGLE_SERVICE_ACCOUNT), offer.calendar_id, offer.hold_id);
+			await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ? AND declined = 1").bind(offer.token).run();
 		} catch (error) {
+			// Still on their calendar; the hourly job tries again.
 			console.error(error);
 		}
 	}
@@ -126,6 +159,49 @@ async function decline(env: Env, { offer, request, intake }: Loaded) {
 	if (ended.meta.changes !== 1) return;
 	const time = timeOf(env, request);
 	await send(env, [notices.declined(intake, time), notices.nobody(intake, time, env.MAIL_TO)]);
+}
+
+// A request with no time picked is left open this long before it expires.
+const UNTIMED_DAYS = 7;
+
+// Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
+// customer, then deletes the holds nobody needs any more: a declined tech's, and every hold but
+// the booking once a request is settled. Holds whose delete failed earlier are among them.
+export async function expire(env: Env, now = Date.now()): Promise<void> {
+	const { results: expired } = await env.DB.prepare(
+		`UPDATE requests SET status = 'expired'
+		 WHERE status = 'pending' AND (slot_start <= ?1 OR (slot_start IS NULL AND created <= ?2))
+		 RETURNING *`,
+	)
+		.bind(now, now - UNTIMED_DAYS * 86_400_000)
+		.all<RequestRow>();
+	if (expired.length > 0) {
+		await send(
+			env,
+			expired.flatMap((request) => {
+				const intake: Intake = JSON.parse(request.intake);
+				const time = timeOf(env, request);
+				return [notices.expired(intake, time), notices.unclaimed(intake, time, env.MAIL_TO)];
+			}),
+		);
+	}
+
+	const { results: strays } = await env.DB.prepare(
+		`SELECT offers.* FROM offers JOIN requests ON requests.id = offers.request_id
+		 WHERE offers.hold_id IS NOT NULL AND offers.token IS NOT requests.confirmed_by
+		 AND (offers.declined = 1 OR requests.status != 'pending')`,
+	).all<OfferRow>();
+	if (strays.length === 0) return;
+	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+	for (const offer of strays) {
+		try {
+			await deleteEvent(token, offer.calendar_id, offer.hold_id!);
+			await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(offer.token).run();
+		} catch (error) {
+			// Still on the calendar; the next run tries again.
+			console.error(error);
+		}
+	}
 }
 
 export async function act(env: Env, token: string, action: string): Promise<void> {
@@ -174,6 +250,7 @@ export async function page(env: Env, token: string): Promise<Response> {
 	const taker = offers.find((other) => other.token === request.confirmed_by);
 
 	const take = '<button name="action" value="confirm">Take it</button>';
+	const decline = offer.declined ? "" : '<button name="action" value="decline">Decline</button>';
 	const [title, state, buttons] =
 		request.status === "confirmed"
 			? taker?.token === offer.token
@@ -181,13 +258,19 @@ export async function page(env: Env, token: string): Promise<Response> {
 				: [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""]
 			: request.status === "declined"
 				? ["Every tech declined this request", "The customer has been told.", ""]
-				: offer.declined
-					? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
-					: [
-							"New repair request",
-							time ? `For ${stop(time)} The first tech to take it gets it.` : "No time picked. The first tech to take it gets it.",
-							`${take}<button name="action" value="decline">Decline</button>`,
-						];
+				: request.status === "expired"
+					? ["This request expired", "Nobody took it in time, and the customer has been told.", ""]
+					: passed(request)
+						? ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""]
+						: await clashes(env.DB, offer, request)
+							? ["You already have a repair then", "You took another request at this time, so you can't take this one too.", decline]
+							: offer.declined
+								? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
+								: [
+										"New repair request",
+										time ? `For ${stop(time)} The first tech to take it gets it.` : "No time picked. The first tech to take it gets it.",
+										take + decline,
+									];
 
 	return html(
 		title,

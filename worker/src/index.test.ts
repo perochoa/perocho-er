@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, test } from "node:test";
 import { resetTokenCache } from "./google.ts";
@@ -52,7 +52,8 @@ const env = {
 // D1 on top of an in-memory SQLite with the real migrations, for the few calls the worker makes.
 function fakeD1() {
 	const sqlite = new DatabaseSync(":memory:");
-	sqlite.exec(readFileSync(`${import.meta.dirname}/../migrations/0001_requests.sql`, "utf8"));
+	const migrations = `${import.meta.dirname}/../migrations`;
+	for (const file of readdirSync(migrations).sort()) sqlite.exec(readFileSync(`${migrations}/${file}`, "utf8"));
 	const statement = (sql: string, params: any[] = []) => ({
 		bind: (...values: any[]) => statement(sql, values),
 		run: async () => ({ success: true, meta: { changes: Number(sqlite.prepare(sql).run(...params).changes) } }),
@@ -377,6 +378,29 @@ test("gets a new token within 5 minutes of expiry", async () => {
 	assert.equal(tokenRequests, 2);
 });
 
+for (const [label, fields] of [
+	["with a time", { slot: iso(slotStart) }],
+	["without a time", {}],
+] as const) {
+	test(`the same request sent twice ${label} is filed once`, async () => {
+		const first = await submit(fields);
+		const sent = mails.length;
+		const second = await submit(fields);
+		for (const response of [first, second]) {
+			assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+		}
+		assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 1);
+		assert.equal(mails.length, sent);
+	});
+}
+
+test("the same request sent again a while later is a new one", async () => {
+	await submit({});
+	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - hour);
+	await submit({});
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 2);
+});
+
 test("re-reads the calendars on submit, not what /slots last saw", async () => {
 	await getSlots();
 	calendars["sam@example.com"].push({
@@ -415,6 +439,29 @@ test("sends people to the failure page when a service is down", async () => {
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
 	// The techs never heard of it, so it isn't kept.
 	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 0);
+});
+
+test("keeps a request without a time when only some of its emails went out", async () => {
+	const fake = globalThis.fetch;
+	// Fastmail turns down the first submission (Richard's) and sends the rest.
+	globalThis.fetch = async (input, init) => {
+		const response = await fake(input, init);
+		if (String(input) !== "https://api.fastmail.com/jmap/api/" || !String(init?.body).includes("EmailSubmission/set")) {
+			return response;
+		}
+		const json: any = await response.json();
+		const submission = json.methodResponses[1][1];
+		delete submission.created.send0;
+		submission.notCreated = { send0: { type: "forbiddenToSend" } };
+		return Response.json(json);
+	};
+	const original = console.error;
+	console.error = () => {};
+	const response = await submit({});
+	console.error = original;
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.equal(status(), "pending");
+	assert.equal((await offerPage(linkFor("sam@example.com"))).status, 200);
 });
 
 test("emails the customer when their request fails", async () => {
@@ -522,9 +569,26 @@ test("escapes what the customer wrote on the page", async () => {
 	assert.match(body, /&lt;script&gt;/);
 });
 
+test("keeps tags out of what the customer wrote on the calendar", async () => {
+	await submit({ slot: iso(slotStart), problem: '<a href="https://evil.example">Take it</a>' });
+	const { description } = holds[0].body;
+	assert.ok(!description.includes("<a"));
+	assert.match(description, /‹a href="https:\/\/evil\.example"›Take it‹\/a›/);
+});
+
 test("answers an unknown link with 404", async () => {
 	const response = await offerPage("https://intake.test/offers/00000000-0000-4000-8000-000000000000");
 	assert.equal(response.status, 404);
+});
+
+test("a post to a link that isn't a form changes nothing", async () => {
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+	for (const init of [{}, { body: "{}", headers: { "Content-Type": "application/json" } }]) {
+		const response = await worker.fetch(new Request(sam, { method: "POST", ...init }), env);
+		assert.equal(response.status, 303);
+	}
+	assert.equal(status(), "pending");
 });
 
 test("the first tech to take it books it and everyone hears", async () => {
@@ -607,6 +671,190 @@ test("a tech who declined can still take it while it's open", async () => {
 	// His hold went when he declined, so the booking is a new event.
 	assert.equal(holds.at(-1)!.calendarId, "richard@example.com");
 	assert.equal(holds.at(-1)!.body.status, "confirmed");
+});
+
+test("nobody can take it once the time has started", async () => {
+	await submit({ slot: iso(slotStart) });
+	db.sqlite.prepare("UPDATE requests SET slot_start = ?, slot_end = ?").run(Date.now() - hour, Date.now());
+	const sam = linkFor("sam@example.com");
+	mails = [];
+	await press(sam, "confirm");
+	assert.equal(status(), "pending");
+	assert.equal(mails.length + patched.length, 0);
+	const body = await (await offerPage(sam)).text();
+	assert.match(body, /This time has passed/);
+	assert.ok(!body.includes("<form"));
+});
+
+test("a tech can't take two repairs at the same time", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await press(linkFor("sam@example.com"), "confirm");
+
+	// Richard's hold went, so he's free for Bob's request at the same time; Sam has Jane's repair.
+	mails = [];
+	await submit({ slot: iso(slotStart), name: "Bob", email: "bob@example.com" });
+	const bob = () => db.sqlite.prepare("SELECT status FROM requests WHERE intake LIKE '%Bob%'").get() as any;
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	mails = [];
+	await press(sam, "confirm");
+	assert.equal(bob().status, "pending");
+	assert.equal(mails.length, 0);
+	const body = await (await offerPage(sam)).text();
+	assert.match(body, /You already have a repair then/);
+	assert.ok(!body.includes('value="confirm">'));
+
+	await press(richard, "confirm");
+	assert.equal(bob().status, "confirmed");
+});
+
+// Google answers every `method` request with a 403, until the returned function is called.
+const failing = (method: string) => {
+	const original = globalThis.fetch;
+	globalThis.fetch = async (input, init) =>
+		init?.method === method ? new Response("nope", { status: 403 }) : original(input, init);
+	return () => (globalThis.fetch = original);
+};
+
+test("nothing is confirmed until the booking is on the calendar", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+	mails = [];
+	const restore = failing("PATCH");
+	const errors: unknown[] = [];
+	const original = console.error;
+	console.error = (error) => errors.push(error);
+	const response = await press(sam, "confirm");
+	console.error = original;
+	restore();
+
+	assert.equal(response.status, 500);
+	assert.match(await response.text(), /nothing changed/);
+	assert.equal(errors.length, 1);
+	assert.equal(status(), "pending");
+	assert.equal(mails.length + deleted.length, 0);
+	assert.match(await (await offerPage(sam)).text(), /New repair request/);
+
+	await press(sam, "confirm");
+	assert.equal(status(), "confirmed");
+	assert.match(to("jane@example.com")[0].subject, /^Your repair is confirmed/);
+});
+
+// The hourly job.
+
+const tick = () => worker.scheduled({} as ScheduledController, env as unknown as Env);
+const holdIds = () => db.sqlite.prepare("SELECT hold_id FROM offers ORDER BY position").all().map((row: any) => row.hold_id);
+
+test("expires a request nobody took once its time starts, and lets the holds go", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+	await tick();
+	assert.equal(status(), "pending");
+
+	db.sqlite.prepare("UPDATE requests SET slot_start = ?, slot_end = ?").run(Date.now() - hour, Date.now());
+	mails = [];
+	await tick();
+	assert.equal(status(), "expired");
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "contact@perocho.com"]);
+	assert.match(to("jane@example.com")[0].subject, /^We couldn't take your repair request/);
+	assert.match(to("contact@perocho.com")[0].subject, /^Nobody took/);
+	assert.deepEqual(deleted.map((d) => d.calendarId).sort(), ["richard@example.com", "sam@example.com"]);
+	assert.deepEqual(holdIds(), [null, null]);
+	assert.match(await (await offerPage(sam)).text(), /This request expired/);
+
+	// Done once.
+	mails = [];
+	await tick();
+	assert.equal(mails.length, 0);
+	assert.equal(deleted.length, 2);
+});
+
+// Runs `f` with Google failing every `method` request, and errors kept off the test output.
+const withFailing = async (method: string, f: () => Promise<unknown>) => {
+	const [restore, original] = [failing(method), console.error];
+	console.error = () => {};
+	try {
+		await f();
+	} finally {
+		restore();
+		console.error = original;
+	}
+};
+
+test("the hourly job deletes a declined tech's hold that couldn't be deleted at the time", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await withFailing("DELETE", () => press(linkFor("richard@example.com"), "decline"));
+	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
+	await tick();
+	assert.deepEqual(holdIds(), [null, "hold2"]);
+	assert.ok(!calendars["richard@example.com"].some((e: any) => e.id === "hold1"));
+});
+
+test("the hourly job deletes another tech's hold that couldn't be deleted when one took it", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await withFailing("DELETE", () => press(linkFor("sam@example.com"), "confirm"));
+	assert.equal(status(), "confirmed");
+	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
+	await tick();
+	assert.deepEqual(holdIds(), [null, "hold2"]);
+	assert.ok(!calendars["richard@example.com"].some((e: any) => e.id === "hold1"));
+	assert.ok(calendars["sam@example.com"].some((e: any) => e.id === "hold2"));
+});
+
+test("expires a request without a time after a week", async () => {
+	await submit({});
+	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - 6 * 24 * hour);
+	await tick();
+	assert.equal(status(), "pending");
+	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - 8 * 24 * hour);
+	await tick();
+	assert.equal(status(), "expired");
+	assert.match(text(to("jane@example.com").at(-1)), /none of our techs could take this one/);
+});
+
+test("the hourly job leaves the booking alone", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await press(linkFor("sam@example.com"), "confirm");
+	deleted = [];
+	await tick();
+	assert.ok(!deleted.some((d) => d.calendarId === "sam@example.com"));
+	assert.equal(calendars["sam@example.com"].filter((e: any) => e.status === "confirmed").length, 1);
+});
+
+test("taking it in one tab and declining in another keeps the booking", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+
+	// The decline loads the request while it's open, then waits while the confirm goes through.
+	let resume!: () => void;
+	const paused = new Promise<void>((resolve) => (resume = resolve));
+	const prepare = db.prepare;
+	db.prepare = (sql: string) => {
+		const statement = prepare(sql);
+		if (!sql.startsWith("UPDATE offers SET declined = 1")) return statement;
+		return {
+			...statement,
+			bind: (...values: any[]) => {
+				const bound = statement.bind(...values);
+				return { ...bound, run: async () => (await paused, bound.run()) };
+			},
+		};
+	};
+	const declining = press(sam, "decline");
+	await press(sam, "confirm");
+	resume();
+	await declining;
+	db.prepare = prepare;
+
+	assert.equal(status(), "confirmed");
+	assert.ok(!deleted.some((d) => d.calendarId === "sam@example.com"));
+	assert.equal(calendars["sam@example.com"].filter((e: any) => e.status === "confirmed").length, 1);
 });
 
 test("one unreadable calendar costs only that tech their times", async () => {

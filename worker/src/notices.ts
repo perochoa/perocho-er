@@ -30,11 +30,15 @@ export const toTech = (intake: Intake, time: string | null, tech: Offered): Mess
 	].join("\n"),
 });
 
+// Google shows an event's description as HTML, so a customer could hide a link of their own
+// behind text like "Take it". Lookalike brackets keep what they wrote readable without any tags.
+const untagged = (text: string) => text.replaceAll("<", "‹").replaceAll(">", "›");
+
 export const holdDescription = (intake: Intake, time: string, link: string) =>
-	`${describe(intake, time)}\n\nTake it or decline it: ${link}`;
+	`${untagged(describe(intake, time))}\n\nTake it or decline it: ${link}`;
 
 export const bookedDescription = (intake: Intake, time: string, tech: string) =>
-	`${describe(intake, time)}\n\nTaken by ${tech}. Delete this event to cancel, and let them know.`;
+	`${untagged(describe(intake, time))}\n\nTaken by ${tech}. Delete this event to cancel, and let them know.`;
 
 export const holdSummary = (intake: Intake) => `Request: ${what(intake)} (${intake.name})`;
 export const bookedSummary = (intake: Intake) => `Repair: ${what(intake)} (${intake.name})`;
@@ -111,15 +115,34 @@ export const declined = (intake: Intake, time: string | null): Message => ({
 	].join("\n"),
 });
 
+export const expired = (intake: Intake, time: string | null): Message => ({
+	to: intake.email,
+	subject: `We couldn't take your repair request: ${what(intake)}`,
+	text: [
+		hi(intake),
+		"",
+		time
+			? `Sorry, none of our techs could confirm ${stop(time)} Reply to this email and we'll try to find another time, or send the form again with a different one.`
+			: "Sorry, none of our techs could take this one. Reply to this email if you'd like us to try again.",
+		...yours(intake, time),
+	].join("\n"),
+});
+
 // To the other techs and contact@, so nobody plans around it any more.
 export const taken = (intake: Intake, time: string | null, to: string, tech: string): Message => ({
 	to,
 	subject: `Taken by ${tech}: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`,
-	text: `${tech} took this request, so any hold for it on your calendar is gone.\n\n${describe(intake, time)}`,
+	text: `${tech} took this request, so any hold for it comes off your calendar.\n\n${describe(intake, time)}`,
 });
 
 export const nobody = (intake: Intake, time: string | null, to: string): Message => ({
 	to,
 	subject: `Every tech declined: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`,
 	text: `Every tech declined this request, and the customer has been told.\n\n${describe(intake, time)}`,
+});
+
+export const unclaimed = (intake: Intake, time: string | null, to: string): Message => ({
+	to,
+	subject: `Nobody took: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`,
+	text: `Nobody took this request in time, so it's closed and the customer has been told.\n\n${describe(intake, time)}`,
 });

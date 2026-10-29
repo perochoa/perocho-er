@@ -24,14 +24,17 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   - **Take it:** the first tech to press it gets the request. Your hold turns into a green
     `Repair: ...` booking (or one is created if you didn't have a hold), everyone else's hold
     is deleted, and the customer and the other techs are emailed. Anyone who presses it after
-    you sees that you took it.
+    you sees that you took it. You can take a request when you're busy (and move what was
+    there), but not one at the same time as a repair you've already taken.
   - **Decline:** takes only you out; your hold is deleted and the others can still take it. You
     can change your mind and take it while it's open. Once every tech has declined, the customer
     is told nobody can take it.
-  - Requests nobody acts on stay open; nothing expires them yet.
+  - **Nobody takes it in time:** once the picked time starts it can't be taken, and within the
+    hour it expires: any holds are deleted and the customer is told nobody could take it. A
+    request without a time expires after 7 days.
 - **To cancel or move a booking**, change or delete the event and email the customer yourself.
 - **The customer gets an email** when the request comes in, when a tech takes it, when every
-  tech declines, and if it failed to go through.
+  tech declines or it expires, and if it failed to go through.
 - If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
   the calendar too: the hold has everything the email would have, including your link.
 - Times are offered between 2 hours and 31 days ahead, in 60-minute slots on the hour (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in
