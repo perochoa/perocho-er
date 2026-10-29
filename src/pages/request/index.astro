@@ -137,17 +137,17 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const field = form.querySelector<HTMLElement>("[data-slot-field]")!;
 		const select = field.querySelector("select")!;
 		const note = form.querySelector<HTMLElement>("[data-slot-note]")!;
-		const zone = "America/Toronto";
-		const day = new Intl.DateTimeFormat("en-CA", { timeZone: zone, weekday: "long", month: "long", day: "numeric" });
-		const time = new Intl.DateTimeFormat("en-CA", { timeZone: zone, hour: "numeric", minute: "2-digit" });
 
 		fetch(form.dataset.slots!)
 			.then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
-			.then(({ slots }: { slots: { start: string; end: string }[] }) => {
+			.then(({ timeZone, slots }: { timeZone: string; slots: { start: string; end: string }[] }) => {
 				if (slots.length === 0) {
 					note.textContent = "No open times online right now. Tell us what works in the notes, and we'll find one.";
 					return;
 				}
+				// In the worker's zone, so the labels match the times it offers and holds.
+				const day = new Intl.DateTimeFormat("en-CA", { timeZone, weekday: "long", month: "long", day: "numeric" });
+				const time = new Intl.DateTimeFormat("en-CA", { timeZone, hour: "numeric", minute: "2-digit" });
 				const groups = new Map<string, HTMLOptGroupElement>();
 				for (const slot of slots) {
 					const label = day.format(new Date(slot.start));
