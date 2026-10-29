@@ -115,3 +115,7 @@ Two defences, neither needing JS:
   `npm run types` and deploy. Cloudflare counts per location and only roughly, so a bot spread
   over many IPs or locations can still get through; add Turnstile if that starts happening.
   Over-limit posts show up in the worker's logs as `rate limited a request`.
+
+  `GET /slots` has its own limit, **20 fetches a minute** per IP (`SLOTS_LIMITER`), since each one
+  reads every tech's calendar. Past it the worker answers 429, the form shows no time list and
+  people put the times that suit them in the notes. These show up as `rate limited /slots`.

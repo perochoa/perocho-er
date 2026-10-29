@@ -36,6 +36,13 @@ const env = {
 			return { success: limitKeys.length <= allowed };
 		},
 	},
+	// Same for /slots, with its own count.
+	SLOTS_LIMITER: {
+		limit: async ({ key }: { key: string }) => {
+			slotsLimitKeys.push(key);
+			return { success: slotsLimitKeys.length <= slotsAllowed };
+		},
+	},
 };
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -51,6 +58,8 @@ let rival: ((ours: { id: string; created: string }) => object) | null;
 let fetches: string[];
 let limitKeys: string[];
 let allowed: number;
+let slotsLimitKeys: string[];
+let slotsAllowed: number;
 
 beforeEach(() => {
 	// Richard is busy at the slot; Sam is free. Both are busy the hour after.
@@ -72,6 +81,8 @@ beforeEach(() => {
 	fetches = [];
 	limitKeys = [];
 	allowed = Infinity;
+	slotsLimitKeys = [];
+	slotsAllowed = Infinity;
 
 	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = new URL(String(input));
@@ -339,6 +350,17 @@ test("turns away a visitor over the rate limit before calling Google or Fastmail
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
 	assert.deepEqual(fetches, []);
 	assert.equal(holds.length + mails.length, 0);
+});
+
+test("turns away a visitor fetching /slots too often before calling Google", async () => {
+	slotsAllowed = 0;
+	const response = await quietly(() =>
+		worker.fetch(new Request("https://intake.test/slots", { headers: { "CF-Connecting-IP": "203.0.113.7" } }), env),
+	);
+	assert.equal(response.status, 429);
+	assert.deepEqual(fetches, []);
+	assert.deepEqual(slotsLimitKeys, ["203.0.113.7"]);
+	assert.deepEqual(limitKeys, []);
 });
 
 test("counts each valid post against the visitor's IP", async () => {
