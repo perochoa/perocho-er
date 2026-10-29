@@ -108,5 +108,8 @@ export function describe(intake: Intake, time: string | null, tech: string | nul
 // Reply-To would make Fastmail reject the whole email, and the request isn't worth refusing over it.
 export const replyTo = (intake: Intake) => (EMAIL.test(intake.email) ? intake.email : undefined);
 
+// What the request is for: the chosen service, else the device.
+export const what = (intake: Intake) => intake.service || intake.device;
+
 export const subject = (intake: Intake, time: string | null) =>
-	`Repair request: ${intake.service || intake.device} from ${intake.name}${time ? `, ${time}` : ""}`;
+	`Repair request: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`;
