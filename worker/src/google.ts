@@ -54,7 +54,6 @@ export async function accessToken(serviceAccountJson: string): Promise<string> {
 }
 
 interface GoogleEvent {
-	summary?: string;
 	transparency?: string;
 	start: { dateTime?: string; date?: string };
 	end: { dateTime?: string; date?: string };
@@ -72,7 +71,7 @@ export async function listEvents(
 		timeMax: new Date(to).toISOString(),
 		singleEvents: "true",
 		maxResults: "2500",
-		fields: "items(summary,transparency,start,end,attendees(self,responseStatus))",
+		fields: "items(transparency,start,end,attendees(self,responseStatus))",
 	});
 	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?${query}`, {
 		headers: { Authorization: `Bearer ${token}` },
@@ -81,7 +80,6 @@ export async function listEvents(
 	const { items = [] } = (await response.json()) as { items?: GoogleEvent[] };
 
 	return items.map((item) => ({
-		summary: item.summary ?? "",
 		start: Date.parse(item.start.dateTime ?? item.start.date ?? ""),
 		end: Date.parse(item.end.dateTime ?? item.end.date ?? ""),
 		allDay: !item.start.dateTime,

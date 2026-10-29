@@ -14,8 +14,7 @@ const options = {
 	timeZone: "America/Toronto",
 };
 
-const event = (summary: string, start: string, end: string, extra: Partial<CalendarEvent> = {}) => ({
-	summary,
+const event = (start: string, end: string, extra: Partial<CalendarEvent> = {}) => ({
 	start: at(start),
 	end: at(end),
 	allDay: false,
@@ -41,7 +40,7 @@ test("includes weekends", () => {
 });
 
 test("events block overlapping slots", () => {
-	assert.deepEqual(starts([[event("Dentist", "10:30", "11:00")]]), [
+	assert.deepEqual(starts([[event("10:30", "11:00") /* Dentist */]]), [
 		["2026-11-02T14:00:00.000Z", [0]],
 		["2026-11-02T16:00:00.000Z", [0]],
 	]);
@@ -49,15 +48,15 @@ test("events block overlapping slots", () => {
 
 test("free, all-day and declined events don't block", () => {
 	const events = [
-		event("Reminder", "09:00", "12:00", { transparent: true }),
-		event("Birthday", "00:00", "23:59", { allDay: true }),
-		event("Meeting", "09:00", "12:00", { declined: true }),
+		event("09:00", "12:00", { transparent: true }), // Reminder
+		event("00:00", "23:59", { allDay: true }), // Birthday
+		event("09:00", "12:00", { declined: true }), // Meeting
 	];
 	assert.equal(starts([events]).length, 3);
 });
 
 test("a request hold blocks the slot for that tech only", () => {
-	const richard = [event("Request: cleaning", "09:00", "12:00")];
+	const richard = [event("09:00", "12:00") /* Request: cleaning */];
 	assert.deepEqual(starts([richard, []]).map(([, techs]) => techs), [[1], [1], [1]]);
 });
 
