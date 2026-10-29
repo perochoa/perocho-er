@@ -132,7 +132,7 @@ export const expired = (intake: Intake, time: string | null): Message => ({
 export const taken = (intake: Intake, time: string | null, to: string, tech: string): Message => ({
 	to,
 	subject: `Taken by ${tech}: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`,
-	text: `${tech} took this request, so any hold for it on your calendar is gone.\n\n${describe(intake, time)}`,
+	text: `${tech} took this request, so any hold for it comes off your calendar.\n\n${describe(intake, time)}`,
 });
 
 export const nobody = (intake: Intake, time: string | null, to: string): Message => ({
