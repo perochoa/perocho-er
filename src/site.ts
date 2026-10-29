@@ -34,4 +34,5 @@ export const site: Site = {
 	},
 	serviceArea: "Mississauga. Drop off, or we come to you. Message us for details.",
 	hours: "Flexible. Message us and we'll find a time that works.",
+	intakeUrl: "https://perocho-intake.perocho-xela.workers.dev",
 };
