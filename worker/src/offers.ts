@@ -70,31 +70,37 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	const time = timeOf(env, request);
 	if (time !== null) {
 		// Their hold becomes the booking, or they get a new one if they weren't free when it came
-		// in, had declined, or deleted the hold. Everyone else's hold goes.
+		// in, had declined, or deleted the hold.
+		let token: string;
 		try {
-			const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+			token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
 			const booking = {
 				summary: notices.bookedSummary(intake),
 				description: notices.bookedDescription(intake, time, offer.name),
 			};
-			const book = async () => {
-				if (offer.hold_id && (await bookEvent(token, offer.calendar_id, offer.hold_id, booking))) return;
+			if (!offer.hold_id || !(await bookEvent(token, offer.calendar_id, offer.hold_id, booking))) {
 				await createEvent(
 					token,
 					offer.calendar_id,
 					{ ...booking, start: request.slot_start!, end: request.slot_end!, timeZone: env.TIME_ZONE },
 					true,
 				);
-			};
-			const others = offers.filter((other) => other.token !== offer.token && other.hold_id);
-			const results = await Promise.allSettled([
-				book(),
-				...others.map((other) => deleteEvent(token, other.calendar_id, other.hold_id!)),
-			]);
-			for (const result of results) if (result.status === "rejected") console.error(result.reason);
+			}
 		} catch (error) {
-			console.error(error);
+			// Not on their calendar, so nobody has it yet: open it again before anyone is told, and the
+			// error page tells the tech to try again.
+			await env.DB.prepare("UPDATE requests SET status = 'pending', confirmed_by = NULL WHERE id = ? AND confirmed_by = ?")
+				.bind(request.id, offer.token)
+				.run();
+			throw error;
 		}
+
+		// Everyone else's hold goes.
+		const others = offers.filter((other) => other.token !== offer.token && other.hold_id);
+		const results = await Promise.allSettled(
+			others.map((other) => deleteEvent(token, other.calendar_id, other.hold_id!)),
+		);
+		for (const result of results) if (result.status === "rejected") console.error(result.reason);
 	}
 
 	await send(env, [

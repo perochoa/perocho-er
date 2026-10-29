@@ -623,6 +623,39 @@ test("nobody can take it once the time has started", async () => {
 	assert.ok(!body.includes("<form"));
 });
 
+// Google answers every `method` request with a 403, until the returned function is called.
+const failing = (method: string) => {
+	const original = globalThis.fetch;
+	globalThis.fetch = async (input, init) =>
+		init?.method === method ? new Response("nope", { status: 403 }) : original(input, init);
+	return () => (globalThis.fetch = original);
+};
+
+test("nothing is confirmed until the booking is on the calendar", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+	mails = [];
+	const restore = failing("PATCH");
+	const errors: unknown[] = [];
+	const original = console.error;
+	console.error = (error) => errors.push(error);
+	const response = await press(sam, "confirm");
+	console.error = original;
+	restore();
+
+	assert.equal(response.status, 500);
+	assert.match(await response.text(), /nothing changed/);
+	assert.equal(errors.length, 1);
+	assert.equal(status(), "pending");
+	assert.equal(mails.length + deleted.length, 0);
+	assert.match(await (await offerPage(sam)).text(), /New repair request/);
+
+	await press(sam, "confirm");
+	assert.equal(status(), "confirmed");
+	assert.match(to("jane@example.com")[0].subject, /^Your repair is confirmed/);
+});
+
 // The hourly job.
 
 const tick = () => worker.scheduled({} as ScheduledController, env as unknown as Env);

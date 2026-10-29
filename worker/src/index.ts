@@ -274,6 +274,9 @@ export default {
 		} catch (error) {
 			console.error(error);
 			if (pathname === "/request") return Response.redirect(`${env.SITE_URL}/request/failed/`, 303);
+			if (OFFER.test(pathname)) {
+				return new Response("Something went wrong, so nothing changed. Go back and try again.", { status: 500 });
+			}
 			return new Response("Something went wrong", { status: 500 });
 		}
 	},
