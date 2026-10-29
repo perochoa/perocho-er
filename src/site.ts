@@ -15,6 +15,8 @@ interface Site {
 	};
 	serviceArea?: string;
 	hours?: string;
+	// The intake Worker (worker/). Unset hides the request form and every link to it.
+	intakeUrl?: string;
 }
 
 export const site: Site = {

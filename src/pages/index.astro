@@ -26,8 +26,10 @@ const facts = [
 ];
 
 const steps = [
-	{ title: "Message us", text: "On Messenger or by email, about your device." },
-	{ title: "Get a quote", text: "We reply with a price for the fix." },
+	site.intakeUrl
+		? { title: "Request a repair", text: "Fill in our form, or message us on Messenger or by email." }
+		: { title: "Message us", text: "On Messenger or by email, about your device." },
+	{ title: "Get a quote", text: "We reply with a price and agree on a time." },
 	{ title: "Drop it off", text: "Or we come to you." },
 	{ title: "Pay when it's done", text: "By cash or Interac e-Transfer." },
 ];
@@ -42,8 +44,19 @@ const steps = [
 					<h1>{site.tagline}</h1>
 					<p class="lede">{site.intro}</p>
 					<div class="actions">
-						<a class="button" href={site.messengerUrl}>Message us</a>
-						<a class="button secondary" href="#services">See prices</a>
+						{
+							site.intakeUrl ? (
+								<>
+									<a class="button" href="/request/">Request a repair</a>
+									<a class="button secondary" href={site.messengerUrl}>Message us</a>
+								</>
+							) : (
+								<>
+									<a class="button" href={site.messengerUrl}>Message us</a>
+									<a class="button secondary" href="#services">See prices</a>
+								</>
+							)
+						}
 					</div>
 					{
 						site.marketplace && (
@@ -106,7 +119,7 @@ const steps = [
 		<section id="how" class="band alt" aria-labelledby="how-title">
 			<div class="wrap">
 				<p class="eyebrow">How it works</p>
-				<h2 id="how-title">Four steps, no forms</h2>
+				<h2 id="how-title">Four simple steps</h2>
 				<ol class="steps">
 					{
 						steps.map((step) => (
@@ -159,7 +172,12 @@ const steps = [
 						<p class="eyebrow">Contact</p>
 						<h2 id="contact-title">Tell us what's wrong</h2>
 						<p>
-							<a href={site.messengerUrl}>Message us on Messenger</a> or email{" "}
+							{site.intakeUrl && (
+								<>
+									<a href="/request/">Send us a repair request</a>,{" "}
+								</>
+							)}
+							<a href={site.messengerUrl}>{site.intakeUrl ? "message" : "Message"} us on Messenger</a> or email{" "}
 							<a href={`mailto:${site.email}`}>{site.email}</a>.{" "}
 							{
 								site.marketplace && (
@@ -171,7 +189,10 @@ const steps = [
 							}
 						</p>
 						<div class="actions">
-							<a class="button" href={site.messengerUrl}>Message us</a>
+							{site.intakeUrl && <a class="button" href="/request/">Request a repair</a>}
+							<a class={site.intakeUrl ? "button secondary" : "button"} href={site.messengerUrl}>
+								Message us
+							</a>
 							<a class="button secondary" href={`mailto:${site.email}`}>Email us</a>
 						</div>
 					</div>
