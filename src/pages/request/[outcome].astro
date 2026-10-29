@@ -35,7 +35,7 @@ export function getStaticPaths() {
 const { title, text, retry } = Astro.props;
 ---
 
-<BaseLayout title={`${title} · ${site.name}`} description={text}>
+<BaseLayout title={`${title} · ${site.name}`} description={text} noindex>
 	<main class="wrap">
 		<p class="eyebrow">Request a repair</p>
 		<h1>{title}</h1>

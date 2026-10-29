@@ -9,9 +9,11 @@ import SiteHeader from "../components/SiteHeader.astro";
 interface Props {
 	title: string;
 	description: string;
+	// Pages that shouldn't show up in search (form results, 404): no canonical, no og:url.
+	noindex?: boolean;
 }
 
-const { title, description } = Astro.props;
+const { title, description, noindex = false } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 ---
 
@@ -22,11 +24,11 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 		<meta name="viewport" content="width=device-width,initial-scale=1" />
 		<meta name="generator" content={Astro.generator} />
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="canonical" href={canonicalURL} />
+		{noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonicalURL} />}
 		<title>{title}</title>
 		<meta name="description" content={description} />
 		<meta property="og:type" content="website" />
-		<meta property="og:url" content={canonicalURL} />
+		{!noindex && <meta property="og:url" content={canonicalURL} />}
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
 	</head>
