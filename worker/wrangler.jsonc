@@ -1,0 +1,17 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "perocho-intake",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-10-01",
+	"observability": { "enabled": true },
+	// Secrets, set with `npx wrangler secret put <NAME>`: TECHS, GOOGLE_SERVICE_ACCOUNT, FASTMAIL_TOKEN.
+	"vars": {
+		"SITE_URL": "https://repairs.perocho.com",
+		"MAIL_FROM": "contact@perocho.com",
+		"MAIL_TO": "contact@perocho.com",
+		"TIME_ZONE": "America/Toronto",
+		"SLOT_MINUTES": "60",
+		"LEAD_HOURS": "12",
+		"DAYS_AHEAD": "14"
+	}
+}
