@@ -25,8 +25,6 @@ const repairs = defineCollection({
 			beforeAlt: z.string(),
 			after: image(),
 			afterAlt: z.string(),
-			// Set only once the customer has agreed to the repair being shown.
-			consent: z.literal(true),
 		}),
 });
 

@@ -31,5 +31,5 @@ export const site: Site = {
 		ratings: 75,
 	},
 	serviceArea: "Mississauga. Drop off, or we come to you. Message us for details.",
-	// TODO: hours (DECISIONS.md, open question 2).
+	hours: "Flexible. Message us and we'll find a time that works.",
 };
