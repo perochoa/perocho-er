@@ -16,7 +16,61 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Deploys the worker first when worker/** changed, so the site never ships ahead of a worker
+  # response it depends on. Otherwise every step after the path check is skipped and the job passes.
+  worker:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Check for worker changes
+        id: changes
+        if: github.event_name == 'push'
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            worker:
+              - 'worker/**'
+
+      - name: Set up Node
+        if: steps.changes.outputs.worker == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install dependencies
+        if: steps.changes.outputs.worker == 'true'
+        run: npm ci
+
+      - name: Check generated types are current
+        if: steps.changes.outputs.worker == 'true'
+        run: npm run types -- --check
+
+      - name: Typecheck
+        if: steps.changes.outputs.worker == 'true'
+        run: npm run check
+
+      - name: Test
+        if: steps.changes.outputs.worker == 'true'
+        run: npm test
+
+      - name: Deploy worker
+        if: steps.changes.outputs.worker == 'true'
+        uses: cloudflare/wrangler-action@v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker
+
   build:
+    needs: worker
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,6 +78,8 @@ jobs:
 
       - name: Build with Astro
         uses: withastro/action@v6
+        with:
+          node-version: 24
 
   deploy:
     needs: build
