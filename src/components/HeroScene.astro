@@ -1,13 +1,8 @@
 ---
 // A first-person grid floor behind the hero, steered by the joystick's `joystick:input` events.
-interface Props {
-	class?: string;
-}
-
-const { class: className } = Astro.props;
 ---
 
-<canvas class:list={["hero-scene", className]} aria-hidden="true"></canvas>
+<canvas class="hero-scene" aria-hidden="true"></canvas>
 
 <style>
 	.hero-scene {
