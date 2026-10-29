@@ -16,9 +16,32 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Deploys the worker first when worker/** changed, so the site never ships ahead of a worker
-  # response it depends on. Otherwise every step after the path check is skipped and the job passes.
+  # Works out whether worker/** changed in this push. The filter only runs on push; on a manual run
+  # (workflow_dispatch) the output stays empty and the worker job deploys anyway.
+  changes:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      worker: ${{ steps.filter.outputs.worker }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check for worker changes
+        id: filter
+        if: github.event_name == 'push'
+        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        with:
+          filters: |
+            worker:
+              - 'worker/**'
+
+  # Deploys the worker first when worker/** changed, and on every manual run, so the site never
+  # ships ahead of a worker response it depends on. Otherwise the whole job is skipped.
   worker:
+    needs: changes
+    if: needs.changes.outputs.worker == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -29,17 +52,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check for worker changes
-        id: changes
-        if: github.event_name == 'push'
-        uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-        with:
-          filters: |
-            worker:
-              - 'worker/**'
-
       - name: Set up Node
-        if: steps.changes.outputs.worker == 'true'
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
@@ -47,42 +60,43 @@ jobs:
           cache-dependency-path: worker/package-lock.json
 
       - name: Install dependencies
-        if: steps.changes.outputs.worker == 'true'
         run: npm ci
 
       - name: Check generated types are current
-        if: steps.changes.outputs.worker == 'true'
         run: npm run types -- --check
 
       - name: Typecheck
-        if: steps.changes.outputs.worker == 'true'
         run: npm run check
 
       - name: Test
-        if: steps.changes.outputs.worker == 'true'
         run: npm test
 
       - name: Deploy worker
-        if: steps.changes.outputs.worker == 'true'
         uses: cloudflare/wrangler-action@953926a2e2182532811c01a25e53647d93bf07c0 # v4.1.3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           workingDirectory: worker
 
+  # Runs after the worker deployed or was skipped, never after it (or the change check) failed.
   build:
     needs: worker
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # withastro/action has no node-version-file input, so this can't read .nvmrc; keep them in step.
       - name: Build with Astro
         uses: withastro/action@a8b97df764791eb61fbf3338ef713b0e61ae05c5 # v6.1.4
         with:
           node-version: 24
 
+  # Needs its own condition: with the default success() check, a skipped worker job would skip
+  # this one too even though build succeeded, because it looks at every upstream job.
   deploy:
     needs: build
+    if: ${{ !failure() && !cancelled() && needs.build.result == 'success' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages
