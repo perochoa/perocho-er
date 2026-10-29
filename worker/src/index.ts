@@ -8,20 +8,7 @@ import { accessToken, createHold, listEvents } from "./google.ts";
 import { describe, formatTime, parseIntake, replyTo, subject } from "./intake.ts";
 import { openSlots, parseWorkHours } from "./slots.ts";
 
-interface Env {
-	SITE_URL: string;
-	MAIL_FROM: string;
-	MAIL_TO: string;
-	TIME_ZONE: string;
-	WORK_HOURS: string; // "09:00-17:00", every day
-	SLOT_MINUTES: string;
-	LEAD_HOURS: string;
-	DAYS_AHEAD: string;
-	// Secrets (wrangler secret put): tech names and calendar IDs stay out of the public repo.
-	TECHS: string; // [{"name": "Richard", "calendarId": "richard@gmail.com"}, ...]
-	GOOGLE_SERVICE_ACCOUNT: string; // the service account's JSON key
-	FASTMAIL_TOKEN: string; // API token with Email and Email submission access
-}
+// Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
 interface Tech {
 	name: string;
