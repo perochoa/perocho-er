@@ -7,7 +7,8 @@ const services = defineCollection({
 	schema: z.object({
 		title: z.string(),
 		order: z.number(),
-		// Free text until the pricing model is decided (DECISIONS.md, open question 1).
+		// Free text, not a number: prices carry bundles and per-unit deals ("$70, or $100 with...").
+		// Leave it unset to show "Message us for a quote".
 		price: z.string().optional(),
 	}),
 });

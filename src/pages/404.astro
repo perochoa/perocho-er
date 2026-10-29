@@ -1,26 +1,12 @@
 ---
-import BaseLayout from "../layouts/BaseLayout.astro";
-import { site } from "../site";
+import MessagePage from "../components/MessagePage.astro";
 ---
 
-<BaseLayout title={`Page not found · ${site.name}`} description="This page doesn't exist.">
-	<main class="wrap">
-		<p class="eyebrow">404</p>
-		<h1>Page not found</h1>
-		<p>This page doesn't exist, or it moved.</p>
-		<a class="button" href="/">Go to the home page</a>
-	</main>
-</BaseLayout>
-
-<style>
-	main {
-		padding-block: clamp(3rem, 2rem + 5vw, 6rem);
-	}
-	h1 {
-		margin: 0 0 1rem;
-	}
-	p:not(.eyebrow) {
-		margin: 0 0 2rem;
-		color: var(--muted);
-	}
-</style>
+<MessagePage
+	eyebrow="404"
+	title="Page not found"
+	text="This page doesn't exist, or it moved."
+	description="This page doesn't exist."
+>
+	<a class="button" href="/">Go to the home page</a>
+</MessagePage>
