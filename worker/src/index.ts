@@ -15,8 +15,24 @@ interface Tech {
 	calendarId: string;
 }
 
+// The secret is a JSON list of techs. Errors name TECHS but never echo it.
+function parseTechs(raw: string): Tech[] {
+	let techs: unknown;
+	try {
+		techs = JSON.parse(raw);
+	} catch {
+		throw new Error("TECHS is not valid JSON");
+	}
+	const valid =
+		Array.isArray(techs) &&
+		techs.length > 0 &&
+		techs.every((tech) => typeof tech?.name === "string" && typeof tech?.calendarId === "string");
+	if (!valid) throw new Error("TECHS must be a non-empty array of { name, calendarId } strings");
+	return techs as Tech[];
+}
+
 async function findSlots(env: Env, token: string) {
-	const techs: Tech[] = JSON.parse(env.TECHS);
+	const techs = parseTechs(env.TECHS);
 	const options = {
 		now: Date.now(),
 		slotMinutes: env.SLOT_MINUTES,

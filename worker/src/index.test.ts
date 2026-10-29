@@ -176,6 +176,25 @@ test("lets other origins read the times only when DEV_ORIGINS lists them", async
 	assert.equal(other.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
 });
 
+for (const [label, TECHS] of [
+	["not JSON", "{oops"],
+	["not an array", JSON.stringify({ name: "Ann", calendarId: "ann@example.com" })],
+	["an entry without calendarId", JSON.stringify([{ name: "Ann" }])],
+]) {
+	test(`fails clearly when TECHS is ${label}`, async () => {
+		const errors: unknown[] = [];
+		const original = console.error;
+		console.error = (error) => errors.push(error);
+		const response = await slotsFrom("https://repairs.perocho.com", { TECHS });
+		console.error = original;
+		assert.equal(response.status, 500);
+		assert.equal(errors.length, 1);
+		const message = (errors[0] as Error).message;
+		assert.match(message, /^TECHS /);
+		assert.ok(!message.includes("Ann") && !message.includes("oops"));
+	});
+}
+
 test("holds the picked time on the free tech's calendar and emails the techs", async () => {
 	const response = await submit({ slot: iso(slotStart) });
 	assert.equal(response.status, 303);
