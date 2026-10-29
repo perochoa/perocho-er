@@ -28,8 +28,17 @@ const monthFormat = new Intl.DateTimeFormat("en-CA", { month: "long", year: "num
 			<a href="#contact">Contact</a>
 		</nav>
 		<h1>{site.tagline}</h1>
-		<p>Family-run electronics repair and cleaning.</p>
+		<p>{site.intro}</p>
 		<a class="button" href={site.messengerUrl}>Message us</a>
+		{
+			site.marketplace && (
+				<p class="rating">
+					<a href={site.marketplace.url}>
+						{site.marketplace.stars} stars from {site.marketplace.ratings} ratings on Facebook Marketplace
+					</a>
+				</p>
+			)
+		}
 	</header>
 
 	<main>
@@ -93,6 +102,13 @@ const monthFormat = new Intl.DateTimeFormat("en-CA", { month: "long", year: "num
 				<a href={site.messengerUrl}>Message us on Messenger</a> or email
 				<a href={`mailto:${site.email}`}>{site.email}</a>.
 			</p>
+			{
+				site.marketplace && (
+					<p>
+						See our listings and reviews on <a href={site.marketplace.url}>Facebook Marketplace</a>.
+					</p>
+				)
+			}
 			<p>To get a quote faster, tell us:</p>
 			<ul>
 				<li>the device and its model</li>
@@ -144,7 +160,8 @@ const monthFormat = new Intl.DateTimeFormat("en-CA", { month: "long", year: "num
 		margin-top: 0;
 	}
 	.price,
-	.meta {
+	.meta,
+	.rating {
 		font-weight: 600;
 	}
 	.photos {

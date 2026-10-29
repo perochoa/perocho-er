@@ -3,19 +3,33 @@
 interface Site {
 	name: string;
 	tagline: string;
+	intro: string;
 	description: string;
 	email: string;
 	messengerUrl: string;
+	marketplace?: {
+		url: string;
+		// Update by hand from the Marketplace profile now and then.
+		stars: number;
+		ratings: number;
+	};
 	serviceArea?: string;
 	hours?: string;
 }
 
 export const site: Site = {
-	name: "Perocho ER",
-	tagline: "The ER for your electronics.",
-	description: "Family-run electronics repair and cleaning. Message us for a quote.",
+	name: "Perocho Repairs",
+	tagline: "PS5 repairs and upgrades in Mississauga.",
+	intro: "Stick drift, overheating and HDMI port fixes from a family-run shop.",
+	description:
+		"Family-run PS5 repairs and upgrades in Mississauga: stick drift fixes, deep cleaning and HDMI port replacement.",
 	email: "contact@perocho.com",
-	// TODO: Facebook profile username (DECISIONS.md, open question 3). Required before launch.
-	messengerUrl: "https://m.me/TODO",
-	// TODO: service area and hours (DECISIONS.md, open question 2).
+	messengerUrl: "https://m.me/richard.perocho",
+	marketplace: {
+		url: "https://www.facebook.com/marketplace/profile/1786877701",
+		stars: 5,
+		ratings: 75,
+	},
+	serviceArea: "Mississauga. Drop off, or we come to you. Message us for details.",
+	// TODO: hours (DECISIONS.md, open question 2).
 };
