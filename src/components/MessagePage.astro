@@ -1,0 +1,45 @@
+---
+// A whole page with one short message and its buttons (404, form results). Kept out of search.
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { site } from "../site";
+
+interface Props {
+	eyebrow: string;
+	title: string;
+	text: string;
+	// Meta description; defaults to the text.
+	description?: string;
+}
+
+const { eyebrow, title, text, description = text } = Astro.props;
+---
+
+<BaseLayout title={`${title} · ${site.name}`} description={description} noindex>
+	<main class="wrap">
+		<p class="eyebrow">{eyebrow}</p>
+		<h1>{title}</h1>
+		<p>{text}</p>
+		<div class="actions">
+			<slot />
+		</div>
+	</main>
+</BaseLayout>
+
+<style>
+	main {
+		padding-block: clamp(3rem, 2rem + 5vw, 6rem);
+	}
+	h1 {
+		margin: 0 0 1rem;
+	}
+	p:not(.eyebrow) {
+		margin: 0 0 2rem;
+		max-width: 36rem;
+		color: var(--muted);
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+</style>

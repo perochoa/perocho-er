@@ -1,6 +1,6 @@
 ---
 // Where the intake Worker sends people after they submit the form.
-import BaseLayout from "../../layouts/BaseLayout.astro";
+import MessagePage from "../../components/MessagePage.astro";
 import { site } from "../../site";
 
 export function getStaticPaths() {
@@ -35,35 +35,9 @@ export function getStaticPaths() {
 const { title, text, retry } = Astro.props;
 ---
 
-<BaseLayout title={`${title} · ${site.name}`} description={text} noindex>
-	<main class="wrap">
-		<p class="eyebrow">Request a repair</p>
-		<h1>{title}</h1>
-		<p>{text}</p>
-		<div class="actions">
-			{retry && <a class="button" href="/request/">Back to the form</a>}
-			<a class={retry ? "button secondary" : "button"} href={retry ? site.messengerUrl : "/"}>
-				{retry ? "Message us" : "Go to the home page"}
-			</a>
-		</div>
-	</main>
-</BaseLayout>
-
-<style>
-	main {
-		padding-block: clamp(3rem, 2rem + 5vw, 6rem);
-	}
-	h1 {
-		margin: 0 0 1rem;
-	}
-	p:not(.eyebrow) {
-		margin: 0 0 2rem;
-		max-width: 36rem;
-		color: var(--muted);
-	}
-	.actions {
-		display: flex;
-		flex-wrap: wrap;
-		gap: 0.75rem;
-	}
-</style>
+<MessagePage eyebrow="Request a repair" title={title} text={text}>
+	{retry && <a class="button" href="/request/">Back to the form</a>}
+	<a class={retry ? "button secondary" : "button"} href={retry ? site.messengerUrl : "/"}>
+		{retry ? "Message us" : "Go to the home page"}
+	</a>
+</MessagePage>
