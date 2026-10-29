@@ -19,6 +19,9 @@ export type Parsed = { ok: true; intake: Intake } | { ok: false; spam: boolean }
 const CONTACTS = ["email", "text", "messenger"] as const;
 const VISITS = ["drop-off", "house-call"] as const;
 
+// Loose on purpose: catches typos and junk, not every invalid address.
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 const oneOf = <T extends string>(values: readonly T[], value: string): value is T =>
 	(values as readonly string[]).includes(value);
 
@@ -47,7 +50,7 @@ export function parseIntake(form: FormData): Parsed {
 	};
 
 	const reachable =
-		(contact === "email" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fields.email)) ||
+		(contact === "email" && EMAIL.test(fields.email)) ||
 		(contact === "text" && fields.phone.replace(/\D/g, "").length >= 10) ||
 		(contact === "messenger" && fields.facebook !== "");
 	const valid =
@@ -98,7 +101,9 @@ export function describe(intake: Intake, time: string | null, tech: string | nul
 	return lines.join("\n");
 }
 
-export const replyTo = (intake: Intake) => (intake.email.includes("@") ? intake.email : undefined);
+// The email is optional when they picked text or Messenger, so it's only checked here: a malformed
+// Reply-To would make Fastmail reject the whole email, and the request isn't worth refusing over it.
+export const replyTo = (intake: Intake) => (EMAIL.test(intake.email) ? intake.email : undefined);
 
 export const subject = (intake: Intake, time: string | null) =>
 	`Repair request: ${intake.service || intake.device} from ${intake.name}${time ? `, ${time}` : ""}`;
