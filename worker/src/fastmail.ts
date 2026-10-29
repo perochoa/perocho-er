@@ -8,7 +8,22 @@ const USING = [
 ];
 
 type Call = [string, Record<string, unknown>, string];
-type Response = [string, Record<string, any>, string];
+type MethodResponse = [string, Record<string, unknown>, string];
+
+interface Identity {
+	id: string;
+	name: string;
+	email: string;
+}
+
+// The first id a Mailbox/query found, e.g. the drafts mailbox.
+function firstId([, result, callId]: MethodResponse): string {
+	const ids = result.ids;
+	if (!Array.isArray(ids) || typeof ids[0] !== "string") {
+		throw new Error(`jmap: no ${callId} mailbox`);
+	}
+	return ids[0];
+}
 
 export interface Mail {
 	from: string;
@@ -35,7 +50,7 @@ export async function sendMail(token: string, mail: Mail): Promise<void> {
 			body: JSON.stringify({ using: USING, methodCalls }),
 		});
 		if (!response.ok) throw new Error(`jmap: ${response.status} ${await response.text()}`);
-		const { methodResponses } = (await response.json()) as { methodResponses: Response[] };
+		const { methodResponses } = (await response.json()) as { methodResponses: MethodResponse[] };
 		const error = methodResponses.find(([name]) => name === "error");
 		if (error) throw new Error(`jmap: ${JSON.stringify(error[1])}`);
 		return methodResponses;
@@ -46,12 +61,12 @@ export async function sendMail(token: string, mail: Mail): Promise<void> {
 		["Mailbox/query", { accountId, filter: { role: "drafts" } }, "drafts"],
 		["Mailbox/query", { accountId, filter: { role: "sent" } }, "sent"],
 	]);
-	const identity = identities[1].list.find(
-		(i: { email: string }) => i.email.toLowerCase() === mail.from.toLowerCase(),
+	const identity = (identities[1].list as Identity[]).find(
+		(i) => i.email.toLowerCase() === mail.from.toLowerCase(),
 	);
 	if (!identity) throw new Error(`jmap: no identity for ${mail.from}`);
-	const draftsId: string = drafts[1].ids[0];
-	const sentId: string = sent[1].ids[0];
+	const draftsId = firstId(drafts);
+	const sentId = firstId(sent);
 
 	const [created, submitted] = await call([
 		[
