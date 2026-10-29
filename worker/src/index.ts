@@ -72,13 +72,21 @@ async function request(env: Env, form: FormData): Promise<string> {
 		});
 	}
 
-	await sendMail(env.FASTMAIL_TOKEN, {
-		from: env.MAIL_FROM,
-		to: env.MAIL_TO,
-		replyTo: replyTo(intake),
-		subject: subject(intake, time),
-		text: describe(intake, time, tech?.name ?? null),
-	});
+	try {
+		await sendMail(env.FASTMAIL_TOKEN, {
+			from: env.MAIL_FROM,
+			to: env.MAIL_TO,
+			replyTo: replyTo(intake),
+			subject: subject(intake, time),
+			text: describe(intake, time, tech?.name ?? null),
+		});
+	} catch (error) {
+		// Without a hold the email is the only copy of the request, so it failed. With one, the
+		// hold's description already has every detail, and sending them to "failed" would make a
+		// retry find their own hold and say "taken".
+		if (!tech) throw error;
+		console.error(error);
+	}
 	return "sent";
 }
 
