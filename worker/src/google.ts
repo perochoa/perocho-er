@@ -69,10 +69,18 @@ export async function accessToken(serviceAccountJson: string): Promise<string> {
 }
 
 interface GoogleEvent {
+	id: string;
+	created: string;
 	transparency?: string;
 	start: { dateTime?: string; date?: string };
 	end: { dateTime?: string; date?: string };
 	attendees?: { self?: boolean; responseStatus?: string }[];
+}
+
+// `id` and `created` let racing requests agree on whose hold came first.
+export interface ListedEvent extends CalendarEvent {
+	id: string;
+	created: number;
 }
 
 export async function listEvents(
@@ -80,13 +88,13 @@ export async function listEvents(
 	calendarId: string,
 	from: number,
 	to: number,
-): Promise<CalendarEvent[]> {
+): Promise<ListedEvent[]> {
 	const query = new URLSearchParams({
 		timeMin: new Date(from).toISOString(),
 		timeMax: new Date(to).toISOString(),
 		singleEvents: "true",
 		maxResults: "2500",
-		fields: "items(transparency,start,end,attendees(self,responseStatus))",
+		fields: "items(id,created,transparency,start,end,attendees(self,responseStatus))",
 	});
 	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?${query}`, {
 		headers: { Authorization: `Bearer ${token}` },
@@ -95,6 +103,8 @@ export async function listEvents(
 	const { items = [] } = (await response.json()) as { items?: GoogleEvent[] };
 
 	return items.map((item) => ({
+		id: item.id,
+		created: Date.parse(item.created),
 		start: Date.parse(item.start.dateTime ?? item.start.date ?? ""),
 		end: Date.parse(item.end.dateTime ?? item.end.date ?? ""),
 		allDay: !item.start.dateTime,
@@ -107,8 +117,8 @@ export async function createHold(
 	token: string,
 	calendarId: string,
 	hold: { summary: string; description: string; start: number; end: number; timeZone: string },
-): Promise<void> {
-	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events`, {
+): Promise<{ id: string; created: number }> {
+	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?fields=id,created`, {
 		method: "POST",
 		headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
 		body: JSON.stringify({
@@ -121,4 +131,17 @@ export async function createHold(
 		}),
 	});
 	if (!response.ok) throw new Error(`google insert: ${response.status} ${await response.text()}`);
+	const event = (await response.json()) as Pick<GoogleEvent, "id" | "created">;
+	return { id: event.id, created: Date.parse(event.created) };
+}
+
+export async function deleteEvent(token: string, calendarId: string, eventId: string): Promise<void> {
+	const response = await fetch(
+		`${API}/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+		{ method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
+	);
+	// 410: already deleted, which is what we wanted.
+	if (!response.ok && response.status !== 410) {
+		throw new Error(`google delete: ${response.status} ${await response.text()}`);
+	}
 }

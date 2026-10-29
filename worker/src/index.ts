@@ -4,9 +4,9 @@
 //                  then redirects back to the site (the form works without JS)
 
 import { sendMail } from "./fastmail.ts";
-import { accessToken, createHold, listEvents } from "./google.ts";
+import { accessToken, createHold, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
 import { describe, formatTime, parseIntake, replyTo, subject } from "./intake.ts";
-import { openSlots, parseWorkHours } from "./slots.ts";
+import { blocks, openSlots, parseWorkHours } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
@@ -47,6 +47,11 @@ async function slots(env: Env, origin: string | null): Promise<Response> {
 	);
 }
 
+// Whether `event` was written before our hold. Ties on `created` fall back to the id, so two
+// racing requests always agree on which of them came first.
+const before = (event: ListedEvent, hold: { id: string; created: number }) =>
+	event.created < hold.created || (event.created === hold.created && event.id < hold.id);
+
 async function request(env: Env, form: FormData): Promise<string> {
 	const parsed = parseIntake(form);
 	if (!parsed.ok) return parsed.spam ? "sent" : "failed";
@@ -63,13 +68,37 @@ async function request(env: Env, form: FormData): Promise<string> {
 		// First free tech in the TECHS order takes it; the techs can swap it between them.
 		tech = found.techs[slot.techs[0]];
 		time = formatTime(slot.start, env.TIME_ZONE);
-		await createHold(token, tech.calendarId, {
+		const hold = await createHold(token, tech.calendarId, {
 			summary: `Request: ${intake.service || intake.device} (${intake.name})`,
 			description: `${describe(intake, time, tech.name)}\n\nConfirm by renaming this event; delete it to free the time.`,
 			start: slot.start,
 			end: slot.end,
 			timeZone: env.TIME_ZONE,
 		});
+
+		// Two requests for one slot can both get past the check above and both write a hold, so look
+		// again now that ours is written: if anything else blocking the slot came first, give it up.
+		// That covers any event, not only other requests' holds, so it doesn't rely on their titles.
+		// Losing means "taken" rather than trying the next free tech: it's rare, and they pick again
+		// from a fresh list.
+		try {
+			const events = await listEvents(token, tech.calendarId, slot.start, slot.end);
+			const lost = events.some(
+				(event) =>
+					event.id !== hold.id &&
+					blocks(event) &&
+					event.start < slot.end &&
+					event.end > slot.start &&
+					before(event, hold),
+			);
+			if (lost) {
+				await deleteEvent(token, tech.calendarId, hold.id);
+				return "taken";
+			}
+		} catch (error) {
+			// Our hold is written, so carry on and send the email; at worst the techs see two holds.
+			console.error(error);
+		}
 	}
 
 	try {
