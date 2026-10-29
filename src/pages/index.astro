@@ -558,6 +558,10 @@ const steps = site.intakeUrl
 		.steps li::after {
 			display: none;
 		}
+		/* One column: the marker sits beside its step instead of above it. */
+		.steps li {
+			padding: 0.5rem 0 0 3.5rem;
+		}
 		.fact-grid {
 			grid-template-columns: minmax(0, 1fr);
 		}
