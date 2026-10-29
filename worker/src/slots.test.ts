@@ -83,3 +83,11 @@ test("keeps local hours across a daylight saving change", () => {
 test("rejects malformed working hours", () => {
 	assert.throws(() => parseWorkHours("9-5"));
 });
+
+test("lists each free tech once, in list order", () => {
+	// Hours past midnight overlap the next day's, so a tech reaches some starts twice.
+	for (const hours of ["09:00-17:00", "09:00-34:00"]) {
+		const slots = openSlots([[], [], []], { ...options, leadHours: 0, daysAhead: 2, workHours: parseWorkHours(hours) });
+		for (const slot of slots) assert.deepEqual(slot.techs, [0, 1, 2]);
+	}
+});
