@@ -29,7 +29,13 @@ const env = {
 		private_key: privateKey.export({ type: "pkcs8", format: "pem" }),
 	}),
 	FASTMAIL_TOKEN: "fm-token",
-	REQUEST_LIMITER: { limit: async () => ({ success: true }) },
+	// Lets `allowed` posts through, recording the key of each one it's asked about.
+	REQUEST_LIMITER: {
+		limit: async ({ key }: { key: string }) => {
+			limitKeys.push(key);
+			return { success: limitKeys.length <= allowed };
+		},
+	},
 };
 
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -42,6 +48,9 @@ let tokenLifetime: number; // seconds, as Google's expires_in
 // Another request's hold that lands on the same calendar right after ours is written, unseen by
 // our first look at the calendar: the race the re-check is for.
 let rival: ((ours: { id: string; created: string }) => object) | null;
+let fetches: string[];
+let limitKeys: string[];
+let allowed: number;
 
 beforeEach(() => {
 	// Richard is busy at the slot; Sam is free. Both are busy the hour after.
@@ -60,9 +69,13 @@ beforeEach(() => {
 	tokenLifetime = 3600;
 	resetTokenCache();
 	rival = null;
+	fetches = [];
+	limitKeys = [];
+	allowed = Infinity;
 
 	globalThis.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
 		const url = new URL(String(input));
+		fetches.push(url.href);
 		const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
 		if (url.href === "https://oauth2.googleapis.com/token") {
 			tokenRequests++;
@@ -116,7 +129,7 @@ beforeEach(() => {
 	};
 });
 
-const submit = (fields: Record<string, string>) => {
+const submit = (fields: Record<string, string>, headers: Record<string, string> = {}) => {
 	const body = new URLSearchParams({
 		name: "Jane",
 		contact: "email",
@@ -127,7 +140,7 @@ const submit = (fields: Record<string, string>) => {
 		visit: "drop-off",
 		...fields,
 	});
-	return worker.fetch(new Request("https://intake.test/request", { method: "POST", body }), env);
+	return worker.fetch(new Request("https://intake.test/request", { method: "POST", body, headers }), env);
 };
 
 test("lists only times when some tech is free", async () => {
@@ -287,4 +300,47 @@ test("sends people to the failure page when a service is down", async () => {
 	const response = await submit({});
 	console.error = original;
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
+});
+
+const quietly = async <T>(run: () => Promise<T>) => {
+	const original = console.warn;
+	console.warn = () => {};
+	try {
+		return await run();
+	} finally {
+		console.warn = original;
+	}
+};
+
+test("turns away a visitor over the rate limit before calling Google or Fastmail", async () => {
+	allowed = 0;
+	const response = await quietly(() => submit({ slot: iso(slotStart) }, { "CF-Connecting-IP": "203.0.113.7" }));
+	assert.equal(response.status, 303);
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
+	assert.deepEqual(fetches, []);
+	assert.equal(holds.length + mails.length, 0);
+});
+
+test("counts each valid post against the visitor's IP", async () => {
+	allowed = 1;
+	const first = await submit({ slot: iso(slotStart) }, { "CF-Connecting-IP": "203.0.113.7" });
+	assert.equal(first.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.equal(holds.length, 1);
+	assert.equal(mails.length, 1);
+	assert.deepEqual(limitKeys, ["203.0.113.7"]);
+
+	const second = await quietly(() => submit({}, { "CF-Connecting-IP": "203.0.113.7" }));
+	assert.equal(second.headers.get("Location"), "https://repairs.perocho.com/request/failed/");
+	assert.equal(mails.length, 1);
+});
+
+test("shares one count between posts without a visitor IP", async () => {
+	await submit({});
+	assert.deepEqual(limitKeys, ["unknown"]);
+});
+
+test("doesn't count honeypot or invalid posts", async () => {
+	await submit({ website: "spam" });
+	await submit({ name: "" });
+	assert.deepEqual(limitKeys, []);
 });

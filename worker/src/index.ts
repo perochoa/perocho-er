@@ -52,10 +52,18 @@ async function slots(env: Env, origin: string | null): Promise<Response> {
 const before = (event: ListedEvent, hold: { id: string; created: number }) =>
 	event.created < hold.created || (event.created === hold.created && event.id < hold.id);
 
-async function request(env: Env, form: FormData): Promise<string> {
+async function request(env: Env, form: FormData, ip: string | null): Promise<string> {
 	const parsed = parseIntake(form);
 	if (!parsed.ok) return parsed.spam ? "sent" : "failed";
 	const { intake } = parsed;
+
+	// Only a valid post costs Google and Fastmail calls, so only those count; honeypot bots keep
+	// seeing "sent". Without the header (local dev) every visitor shares one count.
+	const { success } = await env.REQUEST_LIMITER.limit({ key: ip ?? "unknown" });
+	if (!success) {
+		console.warn("rate limited a request");
+		return "failed";
+	}
 
 	let time: string | null = null;
 	let tech: Tech | null = null;
@@ -127,7 +135,7 @@ export default {
 				return await slots(env, req.headers.get("Origin"));
 			}
 			if (req.method === "POST" && pathname === "/request") {
-				const outcome = await request(env, await req.formData());
+				const outcome = await request(env, await req.formData(), req.headers.get("CF-Connecting-IP"));
 				return Response.redirect(`${env.SITE_URL}/request/${outcome}/`, 303);
 			}
 			return new Response("Not found", { status: 404 });
