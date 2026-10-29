@@ -22,7 +22,7 @@ const { class: className } = Astro.props;
 
 <script>
 	type Source = "drift" | "user";
-	type Colours = { line: string; accent: string; muted: string };
+	type Colours = { line: string; accent: string; muted: string; floor: number };
 
 	// World units: one grid square is 1 x 1 and the eye sits 1 above the floor.
 	const REACH = 30; // how far out the grid is drawn; the horizon fade has hidden everything beyond it
@@ -33,6 +33,7 @@ const { class: className } = Astro.props;
 	const REDUCED_SCALE = 0.3;
 	const PULSE_SECONDS = 1.4;
 	const DOT_COUNT = 110;
+	const FLOOR_LIGHT = 0.4; // light-mode floor opacity
 
 	const reducedQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 	const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
@@ -67,7 +68,7 @@ const { class: className } = Astro.props;
 		if (!ctx) return;
 
 		const dots = makeDots();
-		let colours: Colours = { line: "", accent: "", muted: "" };
+		let colours: Colours = { line: "", accent: "", muted: "", floor: 1 };
 		let width = 0;
 		let height = 0;
 		let dpr = 1;
@@ -83,10 +84,13 @@ const { class: className } = Astro.props;
 		const readColours = () => {
 			const style = getComputedStyle(canvas);
 			const get = (name: string, fallback: string) => style.getPropertyValue(name).trim() || fallback;
+			const dark = darkQuery.matches;
 			colours = {
-				line: get("--line", "#d9e2e1"),
+				// Light --line barely differs from --bg, so the light floor uses a see-through --muted instead.
+				line: dark ? get("--line", "#23302f") : get("--muted", "#566866"),
 				accent: get("--accent", "#0f766e"),
 				muted: get("--muted", "#566866"),
+				floor: dark ? 1 : FLOOR_LIGHT,
 			};
 		};
 
@@ -137,13 +141,14 @@ const { class: className } = Astro.props;
 			stroke.addColorStop(0.35, colours.line);
 			ctx.strokeStyle = stroke;
 			ctx.lineWidth = 1;
+			ctx.globalAlpha = colours.floor;
 			ctx.stroke();
 			if (pulse > 0) {
 				ctx.globalAlpha = 0.55 * pulse * pulse;
 				ctx.strokeStyle = colours.accent;
 				ctx.stroke();
-				ctx.globalAlpha = 1;
 			}
+			ctx.globalAlpha = 1;
 
 			// Fade the floor out with distance: the far lines bunch up at the horizon and would read as noise.
 			const fade = ctx.createLinearGradient(0, horizon, 0, height);
@@ -192,7 +197,7 @@ const { class: className } = Astro.props;
 				left.addColorStop(1, "rgba(0,0,0,0)");
 				ctx.fillStyle = left;
 			} else {
-				ctx.fillStyle = "rgba(0,0,0,0.45)";
+				ctx.fillStyle = "rgba(0,0,0,0.3)";
 			}
 			ctx.fillRect(0, 0, width, height);
 			const top = ctx.createLinearGradient(0, 0, 0, horizon);
