@@ -1,0 +1,69 @@
+---
+// Where the intake Worker sends people after they submit the form.
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { site } from "../../site";
+
+export function getStaticPaths() {
+	return [
+		{
+			params: { outcome: "sent" },
+			props: {
+				title: "Request sent",
+				text: "Thanks! We'll get back to you soon with a price and to confirm the time.",
+				retry: false,
+			},
+		},
+		{
+			params: { outcome: "taken" },
+			props: {
+				title: "That time was just taken",
+				text: "Someone booked it a moment before you. Pick another time, or message us and we'll find one.",
+				retry: true,
+			},
+		},
+		{
+			params: { outcome: "failed" },
+			props: {
+				title: "Your request didn't go through",
+				text: "Something went wrong on our end, or a field was missing. Try again, or message us instead.",
+				retry: true,
+			},
+		},
+	];
+}
+
+const { title, text, retry } = Astro.props;
+---
+
+<BaseLayout title={`${title} · ${site.name}`} description={text}>
+	<main class="wrap">
+		<p class="eyebrow">Request a repair</p>
+		<h1>{title}</h1>
+		<p>{text}</p>
+		<div class="actions">
+			{retry && <a class="button" href="/request/">Back to the form</a>}
+			<a class={retry ? "button secondary" : "button"} href={retry ? site.messengerUrl : "/"}>
+				{retry ? "Message us" : "Go to the home page"}
+			</a>
+		</div>
+	</main>
+</BaseLayout>
+
+<style>
+	main {
+		padding-block: clamp(3rem, 2rem + 5vw, 6rem);
+	}
+	h1 {
+		margin: 0 0 1rem;
+	}
+	p:not(.eyebrow) {
+		margin: 0 0 2rem;
+		max-width: 36rem;
+		color: var(--muted);
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+	}
+</style>

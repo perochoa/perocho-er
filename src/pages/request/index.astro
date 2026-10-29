@@ -1,0 +1,276 @@
+---
+import { getCollection } from "astro:content";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import { site } from "../../site";
+
+const services = (await getCollection("services")).sort((a, b) => a.data.order - b.data.order);
+---
+
+<BaseLayout title={`Request a repair · ${site.name}`} description={`Request a repair from ${site.name}.`}>
+	<main class="wrap">
+		<p class="eyebrow">Request a repair</p>
+		<h1>Tell us about your device</h1>
+		<p class="lede">
+			We'll reply with a price and confirm a time. Nothing is booked until we confirm.{" "}
+			Prefer Facebook? <a href={site.messengerUrl}>Message us on Messenger</a>
+			{
+				site.marketplace && (
+					<>
+						{" "}or find us on <a href={site.marketplace.url}>Marketplace</a>
+					</>
+				)
+			}.
+		</p>
+
+		{
+			site.intakeUrl ? (
+				<form method="post" action={`${site.intakeUrl}/request`} data-slots={`${site.intakeUrl}/slots`}>
+					<fieldset>
+						<legend>You</legend>
+						<label>
+							Name
+							<input name="name" autocomplete="name" maxlength="100" required />
+						</label>
+						<div class="choice" role="radiogroup" aria-labelledby="contact-label">
+							<span id="contact-label">How should we reach you?</span>
+							<label><input type="radio" name="contact" value="email" checked required /> Email</label>
+							<label><input type="radio" name="contact" value="text" /> Text</label>
+							<label><input type="radio" name="contact" value="messenger" /> Messenger</label>
+						</div>
+						<div class="row">
+							<label data-contact="email">
+								Email
+								<input type="email" name="email" autocomplete="email" maxlength="200" />
+							</label>
+							<label data-contact="text">
+								Phone
+								<input type="tel" name="phone" autocomplete="tel" maxlength="40" />
+							</label>
+							<label data-contact="messenger">
+								Facebook name
+								<input name="facebook" maxlength="100" />
+							</label>
+						</div>
+						<p class="hint">Fill in the one you picked; the others are optional.</p>
+					</fieldset>
+
+					<fieldset>
+						<legend>The repair</legend>
+						<label>
+							Service
+							<select name="service">
+								{services.map((service) => <option>{service.data.title}</option>)}
+								<option value="">Something else, or not sure</option>
+							</select>
+						</label>
+						<label>
+							Device and model
+							<input name="device" maxlength="150" placeholder="e.g. DualSense controller, PS5 Slim" required />
+						</label>
+						<label>
+							What's wrong?
+							<textarea name="problem" rows="4" maxlength="2000" required></textarea>
+						</label>
+						<div class="choice" role="radiogroup" aria-labelledby="visit-label">
+							<span id="visit-label">Drop off or house call?</span>
+							<label><input type="radio" name="visit" value="drop-off" checked required /> Drop off</label>
+							<label><input type="radio" name="visit" value="house-call" /> We come to you</label>
+						</div>
+					</fieldset>
+
+					<fieldset>
+						<legend>When</legend>
+						<label data-slot-field hidden>
+							Pick a time
+							<select name="slot">
+								<option value="">No time yet: find one with us</option>
+							</select>
+						</label>
+						<p class="hint" data-slot-note>Tell us what times work in the notes, and we'll confirm one.</p>
+						<label>
+							<span>Anything else? <span class="optional">(optional)</span></span>
+							<textarea name="notes" rows="3" maxlength="2000"></textarea>
+						</label>
+					</fieldset>
+
+					<!-- Hidden from people; bots fill it in. -->
+					<div class="trap" aria-hidden="true">
+						<label>
+							Leave this empty
+							<input name="website" tabindex="-1" autocomplete="off" />
+						</label>
+					</div>
+
+					<button class="button" type="submit">Send request</button>
+				</form>
+			) : (
+				<p>
+					<a class="button" href={site.messengerUrl}>Message us</a>
+				</p>
+			)
+		}
+	</main>
+</BaseLayout>
+
+<script>
+	const form = document.querySelector<HTMLFormElement>("form[data-slots]");
+
+	if (form) {
+		// Only the contact detail they picked is required.
+		const contactInputs = form.querySelectorAll<HTMLInputElement>("[data-contact] input");
+		const syncContact = () => {
+			const picked = form.querySelector<HTMLInputElement>("[name=contact]:checked")?.value;
+			contactInputs.forEach((input) => {
+				input.required = input.closest<HTMLElement>("[data-contact]")?.dataset.contact === picked;
+			});
+		};
+		form.querySelectorAll("[name=contact]").forEach((radio) => radio.addEventListener("change", syncContact));
+		syncContact();
+
+		// Without JS the form still works; people put the times that suit them in the notes.
+		const field = form.querySelector<HTMLElement>("[data-slot-field]")!;
+		const select = field.querySelector("select")!;
+		const note = form.querySelector<HTMLElement>("[data-slot-note]")!;
+		const zone = "America/Toronto";
+		const day = new Intl.DateTimeFormat("en-CA", { timeZone: zone, weekday: "long", month: "long", day: "numeric" });
+		const time = new Intl.DateTimeFormat("en-CA", { timeZone: zone, hour: "numeric", minute: "2-digit" });
+
+		fetch(form.dataset.slots!)
+			.then((response) => (response.ok ? response.json() : Promise.reject(response.status)))
+			.then(({ slots }: { slots: { start: string; end: string }[] }) => {
+				if (slots.length === 0) {
+					note.textContent = "No open times online right now. Tell us what works in the notes, and we'll find one.";
+					return;
+				}
+				const groups = new Map<string, HTMLOptGroupElement>();
+				for (const slot of slots) {
+					const label = day.format(new Date(slot.start));
+					const group = groups.get(label) ?? Object.assign(document.createElement("optgroup"), { label });
+					groups.set(label, group);
+					group.append(new Option(`${time.format(new Date(slot.start))} to ${time.format(new Date(slot.end))}`, slot.start));
+				}
+				select.append(...groups.values());
+				field.hidden = false;
+				note.textContent = "Times when a tech is free. We'll hold it for you and confirm.";
+			})
+			.catch(() => {});
+	}
+</script>
+
+<style>
+	main {
+		max-width: 44rem;
+		padding-block: clamp(3rem, 2rem + 4vw, 5rem);
+	}
+	h1 {
+		margin: 0;
+	}
+	.lede {
+		margin: 1rem 0 2rem;
+		color: var(--muted);
+	}
+	form {
+		display: grid;
+		gap: 1.25rem;
+	}
+	fieldset {
+		display: grid;
+		gap: 1rem;
+		margin: 0;
+		padding: 1.5rem;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: 0.75rem;
+	}
+	legend {
+		padding: 0;
+		float: left;
+		font-size: 1.125rem;
+		font-weight: 700;
+	}
+	legend + * {
+		clear: left;
+	}
+	label,
+	.choice > span {
+		display: grid;
+		gap: 0.375rem;
+		font-weight: 600;
+		font-size: 0.9375rem;
+	}
+	label[hidden] {
+		display: none;
+	}
+	input:not([type="radio"]),
+	select,
+	textarea {
+		box-sizing: border-box;
+		width: 100%;
+		padding: 0.625rem 0.75rem;
+		border: 1px solid var(--line);
+		border-radius: 0.5rem;
+		background: var(--bg);
+		color: var(--ink);
+		font: inherit;
+		font-weight: 400;
+	}
+	input:focus-visible,
+	select:focus-visible,
+	textarea:focus-visible {
+		outline: 2px solid var(--accent);
+		outline-offset: 0;
+		border-color: var(--accent);
+	}
+	textarea {
+		resize: vertical;
+	}
+	.choice {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.5rem 1.25rem;
+	}
+	.choice > span {
+		flex-basis: 100%;
+	}
+	.choice label {
+		display: flex;
+		align-items: center;
+		gap: 0.5rem;
+		font-weight: 400;
+		font-size: 1rem;
+	}
+	input[type="radio"] {
+		accent-color: var(--accent);
+		margin: 0;
+	}
+	.row {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		gap: 1rem;
+	}
+	.hint,
+	.optional {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.875rem;
+		font-weight: 400;
+	}
+	.trap {
+		position: absolute;
+		left: -100vw;
+	}
+	button {
+		justify-self: start;
+		font: inherit;
+		font-weight: 600;
+		cursor: pointer;
+	}
+	@media (max-width: 40rem) {
+		.row {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		button {
+			justify-self: stretch;
+		}
+	}
+</style>
