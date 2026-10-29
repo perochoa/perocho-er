@@ -1,7 +1,7 @@
 // Google Calendar through a service account. Each tech shares their calendar with the service
 // account's email and gives it "Make changes to events".
 
-import type { CalendarEvent } from "./slots.ts";
+import { type CalendarEvent, isAvailable } from "./slots.ts";
 
 interface ServiceAccount {
 	client_email: string;
@@ -71,6 +71,7 @@ export async function accessToken(serviceAccountJson: string): Promise<string> {
 interface GoogleEvent {
 	id: string;
 	created: string;
+	summary?: string;
 	transparency?: string;
 	start: { dateTime?: string; date?: string };
 	end: { dateTime?: string; date?: string };
@@ -94,7 +95,7 @@ export async function listEvents(
 		timeMax: new Date(to).toISOString(),
 		singleEvents: "true",
 		maxResults: "2500",
-		fields: "items(id,created,transparency,start,end,attendees(self,responseStatus))",
+		fields: "items(id,created,summary,transparency,start,end,attendees(self,responseStatus))",
 	});
 	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?${query}`, {
 		headers: { Authorization: `Bearer ${token}` },
@@ -110,6 +111,7 @@ export async function listEvents(
 		allDay: !item.start.dateTime,
 		transparent: item.transparency === "transparent",
 		declined: item.attendees?.some((a) => a.self && a.responseStatus === "declined") ?? false,
+		available: isAvailable(item.summary ?? ""),
 	}));
 }
 

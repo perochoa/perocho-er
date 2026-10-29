@@ -9,11 +9,12 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
 
 ## For the techs
 
-- **You're bookable 9:00 to 17:00 every day, weekends included,** wherever your calendar has
-  no event (`WORK_HOURS` in `wrangler.jsonc`). Keep your calendar up to date, and add an event
-  for any time off.
-- **Your events block times automatically.** All-day events, events set to "Free" and invites
-  you declined don't.
+- **You're only bookable inside your "Available" blocks.** Add an event whose title starts with
+  `Available` (e.g. `Available`, `Available - shop`) for each stretch you can take repairs; a
+  repeating event works. A 13:00-16:00 block offers 13:00, 14:00 and 15:00. All-day blocks don't
+  count. Delete or shorten a block to stop offering that time.
+- **Your other events still block times inside a block.** All-day events, events set to "Free"
+  and invites you declined don't.
 - **A request shows up as a yellow, tentative `Request: ...` event** with the details in its
   description, and an email arrives at `contact@perocho.com`. Reply to the email to reach the
   customer. If the email fails to send, the customer is still told the request went through,
