@@ -26,9 +26,11 @@ const oneOf = <T extends string>(values: readonly T[], value: string): value is 
 	(values as readonly string[]).includes(value);
 
 export function parseIntake(form: FormData): Parsed {
-	const field = (name: string, max: number) => {
+	// Single-line unless told otherwise: CR/LF would leak into subjects and summaries.
+	const field = (name: string, max: number, multiline = false) => {
 		const value = form.get(name);
-		return typeof value === "string" ? value.trim().slice(0, max) : "";
+		if (typeof value !== "string") return "";
+		return (multiline ? value : value.replace(/\s+/g, " ")).trim().slice(0, max);
 	};
 
 	// Hidden from people; bots fill it in.
@@ -45,8 +47,8 @@ export function parseIntake(form: FormData): Parsed {
 		facebook: field("facebook", 100),
 		service: field("service", 150),
 		device: field("device", 150),
-		problem: field("problem", 2000),
-		notes: field("notes", 2000),
+		problem: field("problem", 2000, true),
+		notes: field("notes", 2000, true),
 	};
 
 	const invalid = { ok: false, spam: false } as const;

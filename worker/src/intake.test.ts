@@ -28,6 +28,13 @@ test("parses the picked time", () => {
 	assert.equal(parsed.intake.slot, Date.parse("2026-11-02T15:00:00.000Z"));
 });
 
+test("collapses whitespace in single-line fields only", () => {
+	const parsed = parseIntake(form({ name: "Jane\r\n\tDoe", problem: "Drifts\nand clicks" }));
+	assert.ok(parsed.ok);
+	assert.equal(parsed.intake.name, "Jane Doe");
+	assert.equal(parsed.intake.problem, "Drifts\nand clicks");
+});
+
 test("needs the detail for the chosen way to reach them", () => {
 	assert.equal(parseIntake(form({ contact: "email", email: "nope" })).ok, false);
 	assert.equal(parseIntake(form({ contact: "text", phone: "555-1234" })).ok, false);
