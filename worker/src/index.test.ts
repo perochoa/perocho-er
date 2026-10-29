@@ -14,8 +14,8 @@ const slotStart = Math.ceil((Date.now() + 24 * hour) / hour) * hour;
 
 const env = {
 	SITE_URL: "https://repairs.perocho.com",
-	MAIL_FROM: "contact@perocho.com",
-	MAIL_TO: "contact@perocho.com",
+	MAIL_FROM: "repairs@perocho.com",
+	MAIL_TO: "repairs@perocho.com",
 	TIME_ZONE: "America/Toronto",
 	SLOT_MINUTES: 60,
 	LEAD_HOURS: 2,
@@ -174,7 +174,7 @@ beforeEach(() => {
 			if (method === "Identity/get") {
 				return Response.json({
 					methodResponses: [
-						["Identity/get", { list: [{ id: "id1", name: "Perocho Repairs", email: "contact@perocho.com" }] }, "identities"],
+						["Identity/get", { list: [{ id: "id1", name: "Perocho Repairs", email: "repairs@perocho.com" }] }, "identities"],
 						["Mailbox/query", { ids: ["drafts"] }, "drafts"],
 						["Mailbox/query", { ids: ["sent"] }, "sent"],
 					],
@@ -276,13 +276,13 @@ test("holds the picked time on the free tech's calendar and offers it to every t
 	assert.ok(holds[0].body.description.includes(linkFor("sam@example.com")));
 
 	// Richard is busy then but still hears of it, with his own link.
-	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["richard@example.com", "sam@example.com", "contact@perocho.com", "jane@example.com"]);
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["richard@example.com", "sam@example.com", "repairs@perocho.com", "jane@example.com"]);
 	assert.notEqual(linkFor("richard@example.com"), linkFor("sam@example.com"));
 	assert.deepEqual(to("sam@example.com")[0].replyTo, [{ email: "jane@example.com" }]);
 	assert.match(text(to("sam@example.com")[0]), /tentative hold/);
 	assert.doesNotMatch(text(to("richard@example.com")[0]), /tentative hold/);
-	assert.doesNotMatch(text(to("contact@perocho.com")[0]), /offers/);
-	assert.match(text(to("contact@perocho.com")[0]), /Sent to: Richard, Sam\nHeld on: Sam \(tentative\)/);
+	assert.doesNotMatch(text(to("repairs@perocho.com")[0]), /offers/);
+	assert.match(text(to("repairs@perocho.com")[0]), /Sent to: Richard, Sam\nHeld on: Sam \(tentative\)/);
 	assert.match(to("jane@example.com")[0].subject, /^We got your repair request/);
 	assert.equal(to("jane@example.com")[0].replyTo, undefined);
 });
@@ -534,7 +534,7 @@ test("doesn't count honeypot or invalid posts", async () => {
 
 test("doesn't keep a Sent copy of mail to our own address", async () => {
 	await submit({});
-	// Richard, Sam, contact@ (ourselves), Jane.
+	// Richard, Sam, repairs@ (ourselves), Jane.
 	assert.deepEqual(submissions[0].onSuccessDestroyEmail, ["#send2"]);
 	assert.deepEqual(Object.keys(submissions[0].onSuccessUpdateEmail), ["#send0", "#send1", "#send3"]);
 	assert.equal(submissions[0].onSuccessUpdateEmail["#send0"]["mailboxIds/sent"], true);
@@ -609,7 +609,7 @@ test("the first tech to take it books it and everyone hears", async () => {
 	assert.equal(patched[0].body.summary, "Repair: PS5 deep cleaning (Jane)");
 	assert.deepEqual(deleted, [{ calendarId: "richard@example.com", eventId: "hold1" }]);
 
-	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "richard@example.com", "contact@perocho.com"]);
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "richard@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^Your repair is confirmed/);
 	assert.match(text(to("jane@example.com")[0]), /Sam has confirmed your repair/);
 	assert.match(to("richard@example.com")[0].subject, /^Taken by Sam/);
@@ -656,7 +656,7 @@ test("declining only takes that tech out, until nobody's left", async () => {
 
 	await press(sam, "decline");
 	assert.equal(status(), "declined");
-	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "contact@perocho.com"]);
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^We can't take your repair request/);
 	assert.match(await (await offerPage(sam)).text(), /Every tech declined/);
 });
@@ -757,9 +757,9 @@ test("expires a request nobody took once its time starts, and lets the holds go"
 	mails = [];
 	await tick();
 	assert.equal(status(), "expired");
-	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "contact@perocho.com"]);
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^We couldn't take your repair request/);
-	assert.match(to("contact@perocho.com")[0].subject, /^Nobody took/);
+	assert.match(to("repairs@perocho.com")[0].subject, /^Nobody took/);
 	assert.deepEqual(deleted.map((d) => d.calendarId).sort(), ["richard@example.com", "sam@example.com"]);
 	assert.deepEqual(holdIds(), [null, null]);
 	assert.match(await (await offerPage(sam)).text(), /This request expired/);

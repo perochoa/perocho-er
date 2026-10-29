@@ -17,7 +17,7 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
 - **Your other events still block times inside a block.** All-day events, events set to "Free"
   and invites you declined don't.
 - **Every request is emailed to every tech**, each with their own link, and a copy without
-  links goes to `contact@perocho.com`. If you're free at the picked time it's also on your
+  links goes to `repairs@perocho.com`. If you're free at the picked time it's also on your
   calendar as a yellow, tentative `Request: ...` event, with the details and your link in its
   description. Reply to the email to reach the customer.
 - **Open your link to take it or decline it.** Opening it changes nothing; the buttons do.
@@ -53,7 +53,7 @@ All free tiers. Do these once.
    main calendar can make a separate "Repairs" calendar and share that instead, but then their
    personal events won't block times.
 3. **Fastmail API token.** Fastmail → Settings → Privacy & Security → API tokens, with access to
-   Email and Email submission, on the account that has the `contact@perocho.com` identity.
+   Email and Email submission, on the account that has the `repairs@perocho.com` identity.
 4. **Set the secrets and deploy once** from this folder:
 
    ```sh

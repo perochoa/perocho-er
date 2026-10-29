@@ -29,8 +29,8 @@
 	"triggers": { "crons": ["0 * * * *"] },
 	"vars": {
 		"SITE_URL": "https://repairs.perocho.com",
-		"MAIL_FROM": "contact@perocho.com",
-		"MAIL_TO": "contact@perocho.com",
+		"MAIL_FROM": "repairs@perocho.com",
+		"MAIL_TO": "repairs@perocho.com",
 		"TIME_ZONE": "America/Toronto",
 		"SLOT_MINUTES": 60,
 		"LEAD_HOURS": 2,
