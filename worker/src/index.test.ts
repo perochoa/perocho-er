@@ -15,9 +15,9 @@ const env = {
 	MAIL_TO: "contact@perocho.com",
 	TIME_ZONE: "America/Toronto",
 	WORK_HOURS: "00:00-24:00", // every hour, so the tests don't depend on the time of day
-	SLOT_MINUTES: "60",
-	LEAD_HOURS: "12",
-	DAYS_AHEAD: "14",
+	SLOT_MINUTES: 60,
+	LEAD_HOURS: 12,
+	DAYS_AHEAD: 14,
 	TECHS: JSON.stringify([
 		{ name: "Richard", calendarId: "richard@example.com" },
 		{ name: "Sam", calendarId: "sam@example.com" },

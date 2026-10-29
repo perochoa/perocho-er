@@ -17,8 +17,8 @@
 		"TIME_ZONE": "America/Toronto",
 		// Bookable every day, in TIME_ZONE, wherever the tech has no event.
 		"WORK_HOURS": "09:00-17:00",
-		"SLOT_MINUTES": "60",
-		"LEAD_HOURS": "12",
-		"DAYS_AHEAD": "14"
+		"SLOT_MINUTES": 60,
+		"LEAD_HOURS": 12,
+		"DAYS_AHEAD": 14
 	}
 }

@@ -19,9 +19,9 @@ async function findSlots(env: Env, token: string) {
 	const techs: Tech[] = JSON.parse(env.TECHS);
 	const options = {
 		now: Date.now(),
-		slotMinutes: Number(env.SLOT_MINUTES),
-		leadHours: Number(env.LEAD_HOURS),
-		daysAhead: Number(env.DAYS_AHEAD),
+		slotMinutes: env.SLOT_MINUTES,
+		leadHours: env.LEAD_HOURS,
+		daysAhead: env.DAYS_AHEAD,
 		workHours: parseWorkHours(env.WORK_HOURS),
 		timeZone: env.TIME_ZONE,
 	};
