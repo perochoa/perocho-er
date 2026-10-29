@@ -33,7 +33,7 @@ async function findSlots(env: Env, token: string) {
 }
 
 async function slots(env: Env, origin: string | null): Promise<Response> {
-	const allowed = [env.SITE_URL, "http://localhost:4321"];
+	const allowed = [env.SITE_URL, ...env.DEV_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)];
 	const { slots } = await findSlots(env, await accessToken(env.GOOGLE_SERVICE_ACCOUNT));
 	return Response.json(
 		{ slots: slots.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })) },

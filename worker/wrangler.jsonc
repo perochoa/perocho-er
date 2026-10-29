@@ -19,6 +19,9 @@
 		"WORK_HOURS": "09:00-17:00",
 		"SLOT_MINUTES": 60,
 		"LEAD_HOURS": 12,
-		"DAYS_AHEAD": 14
+		"DAYS_AHEAD": 14,
+		// Comma-separated origins also allowed to read /slots, besides SITE_URL. Leave empty here;
+		// set it in .dev.vars for local work, e.g. DEV_ORIGINS=http://localhost:4321
+		"DEV_ORIGINS": ""
 	}
 }
