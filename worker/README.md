@@ -37,7 +37,7 @@ All free tiers. Do these once.
    personal events won't block times.
 3. **Fastmail API token.** Fastmail → Settings → Privacy & Security → API tokens, with access to
    Email and Email submission, on the account that has the `contact@perocho.com` identity.
-4. **Deploy** from this folder:
+4. **Set the secrets and deploy once** from this folder:
 
    ```sh
    npm ci
@@ -58,6 +58,23 @@ All free tiers. Do these once.
 
 5. **Turn the form on:** set `intakeUrl` in `src/site.ts` to the URL `wrangler deploy` printed
    (no trailing slash) and merge that change. Until then the site hides every link to the form.
+6. **Let CI deploy.** Create a Cloudflare API token (My Profile → API Tokens → Create Token →
+   the "Edit Cloudflare Workers" template), limited to the one account and its zones. Add it in
+   GitHub → the repo's Settings → Secrets and variables → Actions as `CLOUDFLARE_API_TOKEN`.
+   Wrangler finds the account from the token, so no account ID is needed while the token covers
+   only one account.
+
+## Deploys
+
+Merging to `main` deploys the worker from CI when anything under `worker/` changed
+(`.github/workflows/deploy.yml`). The job runs the types check, typecheck and tests first, and the
+site deploys only after it, so a site change that needs a new worker response never goes out
+first. If the worker job fails, the site doesn't deploy either.
+
+`npx wrangler deploy` from this folder still works for a hotfix; the next merge that touches
+`worker/` deploys `main` over it, so merge the fix too. Secrets aren't part of a deploy: set
+them with `npx wrangler secret put`, and add new ones to `secrets.required` (deploy fails until
+they're set).
 
 ## Development
 
