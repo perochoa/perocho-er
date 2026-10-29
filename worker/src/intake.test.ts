@@ -38,6 +38,7 @@ test("needs the detail for the chosen way to reach them", () => {
 
 test("rejects missing fields and unknown choices", () => {
 	assert.equal(parseIntake(form({ problem: "  " })).ok, false);
+	assert.equal(parseIntake(form({ contact: "pigeon" })).ok, false);
 	assert.equal(parseIntake(form({ visit: "mail-in" })).ok, false);
 	assert.equal(parseIntake(form({ slot: "tomorrow-ish" })).ok, false);
 });

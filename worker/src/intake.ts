@@ -49,6 +49,9 @@ export function parseIntake(form: FormData): Parsed {
 		notes: field("notes", 2000),
 	};
 
+	const invalid = { ok: false, spam: false } as const;
+	if (!oneOf(CONTACTS, contact) || !oneOf(VISITS, visit)) return invalid;
+
 	const reachable =
 		(contact === "email" && EMAIL.test(fields.email)) ||
 		(contact === "text" && fields.phone.replace(/\D/g, "").length >= 10) ||
@@ -57,13 +60,11 @@ export function parseIntake(form: FormData): Parsed {
 		fields.name !== "" &&
 		fields.device !== "" &&
 		fields.problem !== "" &&
-		oneOf(CONTACTS, contact) &&
-		oneOf(VISITS, visit) &&
 		reachable &&
 		(slot === null || !Number.isNaN(slot));
 
-	if (!valid) return { ok: false, spam: false };
-	return { ok: true, intake: { ...fields, contact, visit, slot } as Intake };
+	if (!valid) return invalid;
+	return { ok: true, intake: { ...fields, contact, visit, slot } };
 }
 
 const CONTACT_LABELS = { email: "Email", text: "Text", messenger: "Messenger" };
