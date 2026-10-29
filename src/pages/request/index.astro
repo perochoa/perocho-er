@@ -158,10 +158,13 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			weekLabel.textContent = range.formatRange(noon(sunday), noon(addDays(sunday, 6)));
 			prev.disabled = week === 0;
 			next.disabled = week === weeks.length - 1;
+			// Days before today keep their column, so the weekdays still line up, but aren't shown.
+			const today = dateOf(new Date());
 			buttons.forEach((button, i) => {
 				const date = addDays(sunday, i);
 				button.dataset.date = date;
 				button.disabled = !groups.has(date);
+				button.classList.toggle("past", date < today);
 				button.setAttribute("aria-pressed", String(date === picked));
 				button.setAttribute("aria-label", day.format(noon(date)) + (button.disabled ? ": no techs available" : ""));
 				button.replaceChildren(Object.assign(document.createElement("span"), { textContent: weekday.format(noon(date)) }), dayOfMonth.format(noon(date)));
@@ -169,7 +172,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			groups.forEach((group, date) => (group.hidden = date !== picked));
 			dayNote.textContent = [
 				picked ? "" : "Pick a day to see its times.",
-				buttons.some((button) => button.disabled) ? "Greyed-out days have no techs available." : "",
+				buttons.some((button) => button.disabled && !button.classList.contains("past")) ?"Greyed-out days have no techs available." : "",
 			].join(" ").trim();
 			dayNote.hidden = !dayNote.textContent;
 		};
@@ -361,6 +364,9 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	.slots :global(.day:disabled) {
 		opacity: 0.4;
 		cursor: default;
+	}
+	.slots :global(.day.past) {
+		visibility: hidden;
 	}
 	.slots :global(.day span) {
 		color: var(--muted);
