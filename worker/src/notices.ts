@@ -111,6 +111,19 @@ export const declined = (intake: Intake, time: string | null): Message => ({
 	].join("\n"),
 });
 
+export const expired = (intake: Intake, time: string | null): Message => ({
+	to: intake.email,
+	subject: `We couldn't take your repair request: ${what(intake)}`,
+	text: [
+		hi(intake),
+		"",
+		time
+			? `Sorry, none of our techs could confirm ${stop(time)} Reply to this email and we'll try to find another time, or send the form again with a different one.`
+			: "Sorry, none of our techs could take this one. Reply to this email if you'd like us to try again.",
+		...yours(intake, time),
+	].join("\n"),
+});
+
 // To the other techs and contact@, so nobody plans around it any more.
 export const taken = (intake: Intake, time: string | null, to: string, tech: string): Message => ({
 	to,
@@ -122,4 +135,10 @@ export const nobody = (intake: Intake, time: string | null, to: string): Message
 	to,
 	subject: `Every tech declined: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`,
 	text: `Every tech declined this request, and the customer has been told.\n\n${describe(intake, time)}`,
+});
+
+export const unclaimed = (intake: Intake, time: string | null, to: string): Message => ({
+	to,
+	subject: `Nobody took: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`,
+	text: `Nobody took this request in time, so it's closed and the customer has been told.\n\n${describe(intake, time)}`,
 });

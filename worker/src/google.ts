@@ -177,8 +177,9 @@ export async function deleteEvent(token: string, calendarId: string, eventId: st
 		`${API}/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
 		{ method: "DELETE", headers: { Authorization: `Bearer ${token}` } },
 	);
-	// 410: already deleted, which is what we wanted.
-	if (!response.ok && response.status !== 410) {
+	// 410: already deleted, which is what we wanted. 404: never there, or no longer ours to see;
+	// either way there's nothing to delete, and retrying won't change that.
+	if (!response.ok && response.status !== 404 && response.status !== 410) {
 		throw new Error(`google delete: ${response.status} ${await response.text()}`);
 	}
 }

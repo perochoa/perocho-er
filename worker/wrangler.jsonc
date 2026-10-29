@@ -25,6 +25,8 @@
 			"database_id": "b7ed3a0c-2280-4244-abc1-d8693bb0a9c5"
 		}
 	],
+	// Hourly: expires requests nobody took in time and deletes holds left on calendars (src/offers.ts).
+	"triggers": { "crons": ["0 * * * *"] },
 	"vars": {
 		"SITE_URL": "https://repairs.perocho.com",
 		"MAIL_FROM": "contact@perocho.com",

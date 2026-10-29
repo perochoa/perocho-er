@@ -12,7 +12,7 @@ interface RequestRow {
 	intake: string;
 	slot_start: number | null;
 	slot_end: number | null;
-	status: "pending" | "confirmed" | "declined";
+	status: "pending" | "confirmed" | "declined" | "expired";
 	confirmed_by: string | null;
 }
 
@@ -132,6 +132,48 @@ async function decline(env: Env, { offer, request, intake }: Loaded) {
 	await send(env, [notices.declined(intake, time), notices.nobody(intake, time, env.MAIL_TO)]);
 }
 
+// A request with no time picked is left open this long before it expires.
+const UNTIMED_DAYS = 7;
+
+// Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
+// customer, then deletes any hold a settled request left on a calendar.
+export async function expire(env: Env, now = Date.now()): Promise<void> {
+	const { results: expired } = await env.DB.prepare(
+		`UPDATE requests SET status = 'expired'
+		 WHERE status = 'pending' AND (slot_start <= ?1 OR (slot_start IS NULL AND created <= ?2))
+		 RETURNING *`,
+	)
+		.bind(now, now - UNTIMED_DAYS * 86_400_000)
+		.all<RequestRow>();
+	if (expired.length > 0) {
+		await send(
+			env,
+			expired.flatMap((request) => {
+				const intake: Intake = JSON.parse(request.intake);
+				const time = timeOf(env, request);
+				return [notices.expired(intake, time), notices.unclaimed(intake, time, env.MAIL_TO)];
+			}),
+		);
+	}
+
+	const { results: strays } = await env.DB.prepare(
+		`SELECT offers.* FROM offers JOIN requests ON requests.id = offers.request_id
+		 WHERE offers.hold_id IS NOT NULL AND requests.status != 'pending'
+		 AND offers.token IS NOT requests.confirmed_by`,
+	).all<OfferRow>();
+	if (strays.length === 0) return;
+	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+	for (const offer of strays) {
+		try {
+			await deleteEvent(token, offer.calendar_id, offer.hold_id!);
+			await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(offer.token).run();
+		} catch (error) {
+			// Still on the calendar; the next run tries again.
+			console.error(error);
+		}
+	}
+}
+
 export async function act(env: Env, token: string, action: string): Promise<void> {
 	const loaded = await load(env.DB, token);
 	if (!loaded) return;
@@ -185,7 +227,7 @@ export async function page(env: Env, token: string): Promise<Response> {
 				: [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""]
 			: request.status === "declined"
 				? ["Every tech declined this request", "The customer has been told.", ""]
-				: passed(request)
+				: request.status === "expired" || passed(request)
 					? ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""]
 					: offer.declined
 						? ["You declined this request", "It's still open for the others, so you can take it after all.", take]

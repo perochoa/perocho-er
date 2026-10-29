@@ -5,12 +5,13 @@
 //                        site (the form works without JS)
 //   GET  /offers/<token> one tech's link to a request: shows it, with buttons to take or decline it
 //   POST /offers/<token> those buttons
+// and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time.
 
 import { sendMail } from "./fastmail.ts";
 import { accessToken, createEvent, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
-import { act, page } from "./offers.ts";
+import { act, expire, page } from "./offers.ts";
 import { blocks, openSlots, type Slot } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
@@ -275,5 +276,9 @@ export default {
 			if (pathname === "/request") return Response.redirect(`${env.SITE_URL}/request/failed/`, 303);
 			return new Response("Something went wrong", { status: 500 });
 		}
+	},
+
+	async scheduled(_controller, env): Promise<void> {
+		await expire(env);
 	},
 } satisfies ExportedHandler<Env>;

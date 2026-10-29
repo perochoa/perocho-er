@@ -2,7 +2,7 @@
 
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { DatabaseSync } from "node:sqlite";
 import { beforeEach, test } from "node:test";
 import { resetTokenCache } from "./google.ts";
@@ -52,7 +52,8 @@ const env = {
 // D1 on top of an in-memory SQLite with the real migrations, for the few calls the worker makes.
 function fakeD1() {
 	const sqlite = new DatabaseSync(":memory:");
-	sqlite.exec(readFileSync(`${import.meta.dirname}/../migrations/0001_requests.sql`, "utf8"));
+	const migrations = `${import.meta.dirname}/../migrations`;
+	for (const file of readdirSync(migrations).sort()) sqlite.exec(readFileSync(`${migrations}/${file}`, "utf8"));
 	const statement = (sql: string, params: any[] = []) => ({
 		bind: (...values: any[]) => statement(sql, values),
 		run: async () => ({ success: true, meta: { changes: Number(sqlite.prepare(sql).run(...params).changes) } }),
@@ -620,6 +621,57 @@ test("nobody can take it once the time has started", async () => {
 	const body = await (await offerPage(sam)).text();
 	assert.match(body, /This time has passed/);
 	assert.ok(!body.includes("<form"));
+});
+
+// The hourly job.
+
+const tick = () => worker.scheduled({} as ScheduledController, env as unknown as Env);
+const holdIds = () => db.sqlite.prepare("SELECT hold_id FROM offers ORDER BY position").all().map((row: any) => row.hold_id);
+
+test("expires a request nobody took once its time starts, and lets the holds go", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+	await tick();
+	assert.equal(status(), "pending");
+
+	db.sqlite.prepare("UPDATE requests SET slot_start = ?, slot_end = ?").run(Date.now() - hour, Date.now());
+	mails = [];
+	await tick();
+	assert.equal(status(), "expired");
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "contact@perocho.com"]);
+	assert.match(to("jane@example.com")[0].subject, /^We couldn't take your repair request/);
+	assert.match(to("contact@perocho.com")[0].subject, /^Nobody took/);
+	assert.deepEqual(deleted.map((d) => d.calendarId).sort(), ["richard@example.com", "sam@example.com"]);
+	assert.deepEqual(holdIds(), [null, null]);
+	assert.match(await (await offerPage(sam)).text(), /This time has passed/);
+
+	// Done once.
+	mails = [];
+	await tick();
+	assert.equal(mails.length, 0);
+	assert.equal(deleted.length, 2);
+});
+
+test("expires a request without a time after a week", async () => {
+	await submit({});
+	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - 6 * 24 * hour);
+	await tick();
+	assert.equal(status(), "pending");
+	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - 8 * 24 * hour);
+	await tick();
+	assert.equal(status(), "expired");
+	assert.match(text(to("jane@example.com").at(-1)), /none of our techs could take this one/);
+});
+
+test("the hourly job leaves the booking alone", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await press(linkFor("sam@example.com"), "confirm");
+	deleted = [];
+	await tick();
+	assert.ok(!deleted.some((d) => d.calendarId === "sam@example.com"));
+	assert.equal(calendars["sam@example.com"].filter((e: any) => e.status === "confirmed").length, 1);
 });
 
 test("one unreadable calendar costs only that tech their times", async () => {
