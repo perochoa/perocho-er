@@ -25,7 +25,7 @@ export const site: Site = {
 	intro: "Stick drift, overheating and HDMI port fixes from a family-run shop.",
 	description:
 		"Family-run PS5 repairs and upgrades in Mississauga: stick drift fixes, deep cleaning and HDMI port replacement.",
-	email: "contact@perocho.com",
+	email: "repairs@perocho.com",
 	messengerUrl: "https://m.me/richard.perocho",
 	marketplace: {
 		url: "https://www.facebook.com/marketplace/profile/1786877701",

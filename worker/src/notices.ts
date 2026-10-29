@@ -43,7 +43,7 @@ export const bookedDescription = (intake: Intake, time: string, tech: string) =>
 export const holdSummary = (intake: Intake) => `Request: ${what(intake)} (${intake.name})`;
 export const bookedSummary = (intake: Intake) => `Repair: ${what(intake)} (${intake.name})`;
 
-// For contact@, which keeps a copy of everything without the links.
+// For repairs@, which keeps a copy of everything without the links.
 export const record = (intake: Intake, time: string | null, to: string, techs: Offered[]): Message => {
 	const held = techs.filter((tech) => tech.held).map((tech) => tech.name);
 	return {
@@ -128,7 +128,7 @@ export const expired = (intake: Intake, time: string | null): Message => ({
 	].join("\n"),
 });
 
-// To the other techs and contact@, so nobody plans around it any more.
+// To the other techs and repairs@, so nobody plans around it any more.
 export const taken = (intake: Intake, time: string | null, to: string, tech: string): Message => ({
 	to,
 	subject: `Taken by ${tech}: ${what(intake)} from ${intake.name}${time ? `, ${time}` : ""}`,
