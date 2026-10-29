@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { parseIntake } from "./intake.ts";
+import { parseIntake, replyTo } from "./intake.ts";
 
 const form = (fields: Record<string, string>) => {
 	const data = new FormData();
@@ -44,4 +44,20 @@ test("rejects missing fields and unknown choices", () => {
 
 test("flags the honeypot as spam", () => {
 	assert.deepEqual(parseIntake(form({ website: "http://spam" })), { ok: false, spam: true });
+});
+
+test("replies to the email only when it looks like an address", () => {
+	const reply = (fields: Record<string, string>) => {
+		const parsed = parseIntake(form(fields));
+		assert.ok(parsed.ok);
+		return replyTo(parsed.intake);
+	};
+	assert.equal(reply({}), "jane@example.com");
+	// Optional when they'd rather get a text, so a typo there doesn't refuse the request.
+	const text = { contact: "text", phone: "(905) 555-1234" };
+	assert.equal(reply({ ...text, email: "jane@example.com" }), "jane@example.com");
+	assert.equal(reply({ ...text, email: "jane@" }), undefined);
+	assert.equal(reply({ ...text, email: "@example.com" }), undefined);
+	assert.equal(reply({ ...text, email: "jane doe@example.com" }), undefined);
+	assert.equal(reply({ ...text, email: "" }), undefined);
 });
