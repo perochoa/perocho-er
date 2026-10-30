@@ -1229,5 +1229,10 @@ const steps = site.intakeUrl
 		.actions .copy {
 			flex: none;
 		}
+		/* One button per row: whether two fit side by side depends on the phone's exact width
+		   (402px fits "Message us" next to a squeezed "Email us"; 390px doesn't). */
+		.contact .actions {
+			display: grid;
+		}
 	}
 </style>
