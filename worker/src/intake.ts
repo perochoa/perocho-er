@@ -14,11 +14,6 @@ export interface Intake {
 	rush: number;
 }
 
-// Requests filed before times and phone numbers were required (2026-10-29) are still in D1: their
-// intake may have no phone, a null slot and a `visit` nothing reads any more. Ones from before rush
-// have no `rush`. Read rows as this.
-export type StoredIntake = Omit<Intake, "phone" | "slot" | "rush"> & { phone?: string; slot: number | null; rush?: number };
-
 export type Parsed = { ok: true; intake: Intake } | { ok: false; spam: boolean };
 
 // Loose on purpose: catches typos and junk, not every invalid address.
@@ -82,8 +77,7 @@ export function formatTime(ms: number, timeZone: string): string {
 // Ends a sentence on a time without doubling the period of "a.m." and "p.m.".
 export const stop = (time: string) => (time.endsWith(".") ? time : `${time}.`);
 
-// `time` is null, and the phone missing, only on requests from before both were required.
-export function describe(intake: StoredIntake, time: string | null): string {
+export function describe(intake: Intake, time: string): string {
 	const lines = [
 		["Name", intake.name],
 		["Email", intake.email],
@@ -102,7 +96,7 @@ export function describe(intake: StoredIntake, time: string | null): string {
 }
 
 // What the request is for: the chosen service, else the device.
-export const what = (intake: StoredIntake) => intake.service || intake.device;
+export const what = (intake: Intake) => intake.service || intake.device;
 
 // Leads what the techs see about a request, so a rush stands out in a list of emails or events.
-export const rushed = (intake: StoredIntake) => (intake.rush ? `RUSH ${what(intake)}` : what(intake));
+export const rushed = (intake: Intake) => (intake.rush ? `RUSH ${what(intake)}` : what(intake));

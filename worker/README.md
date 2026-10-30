@@ -44,7 +44,6 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
     is told nobody can take it.
   - **Nobody takes it in time:** once the picked time starts it can't be taken, and within the
     hour it expires: any holds are deleted and the customer is told nobody could take it.
-    Requests sent before a time was required have none; those expire after 7 days.
 - **To cancel or move a booking**, change or delete the event and email the customer yourself.
 - **Your queue** is the "Your queue" link at the bottom of any of your request pages: every
   repair you've taken and not marked done, rush first, then by drop-off time, each with the

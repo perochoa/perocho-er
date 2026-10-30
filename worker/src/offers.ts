@@ -5,14 +5,15 @@
 
 import { type Mail, sendMail } from "./fastmail.ts";
 import { accessToken, bookEvent, createEvent, deleteEvent } from "./google.ts";
-import { describe, dialable, formatTime, stop, type StoredIntake, what } from "./intake.ts";
+import { describe, dialable, formatTime, type Intake, stop, what } from "./intake.ts";
 import * as notices from "./notices.ts";
 
 interface RequestRow {
 	id: string;
 	intake: string;
-	slot_start: number | null; // null only on requests from before times were required
-	slot_end: number | null;
+	// Nullable in the schema (0003 says why), but every request has a time.
+	slot_start: number;
+	slot_end: number;
 	status: "pending" | "confirmed" | "declined" | "expired";
 	confirmed_by: string | null;
 	rush: number; // the fee, 0 for none
@@ -38,14 +39,13 @@ async function load(db: D1Database, token: string) {
 		.prepare("SELECT * FROM offers WHERE request_id = ? ORDER BY position")
 		.bind(request.id)
 		.all<OfferRow>();
-	const intake: StoredIntake = JSON.parse(request.intake);
+	const intake: Intake = JSON.parse(request.intake);
 	return { offer, request, offers, intake };
 }
 
 type Loaded = NonNullable<Awaited<ReturnType<typeof load>>>;
 
-const timeOf = (env: Env, request: RequestRow) =>
-	request.slot_start === null ? null : formatTime(request.slot_start, env.TIME_ZONE);
+const timeOf = (env: Env, request: RequestRow) => formatTime(request.slot_start, env.TIME_ZONE);
 
 const send = async (env: Env, mails: Omit<Mail, "from">[]) => {
 	try {
@@ -57,7 +57,7 @@ const send = async (env: Env, mails: Omit<Mail, "from">[]) => {
 };
 
 // Once the time has started nobody can take it; the scheduled job expires it.
-const passed = (request: RequestRow, now = Date.now()) => request.slot_start !== null && request.slot_start <= now;
+const passed = (request: RequestRow, now = Date.now()) => request.slot_start <= now;
 
 // First tech to get here takes it: one statement, so two techs pressing at once can't both win. A
 // tech who declined can still change their mind while it's open. Other repairs at the same time
@@ -65,7 +65,7 @@ const passed = (request: RequestRow, now = Date.now()) => request.slot_start !==
 async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	const won = await env.DB.prepare(
 		`UPDATE requests SET status = 'confirmed', confirmed_by = ?2
-		 WHERE id = ?1 AND status = 'pending' AND (slot_start IS NULL OR slot_start > ?3)`,
+		 WHERE id = ?1 AND status = 'pending' AND slot_start > ?3`,
 	)
 		.bind(request.id, offer.token, Date.now())
 		.run();
@@ -73,43 +73,41 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	await env.DB.prepare("UPDATE offers SET declined = 0 WHERE token = ?").bind(offer.token).run();
 
 	const time = timeOf(env, request);
-	if (time !== null) {
-		// Their hold becomes the booking, or they get a new one if they weren't free when it came
-		// in, had declined, or deleted the hold.
-		let token: string;
-		try {
-			token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
-			const booking = {
-				summary: notices.bookedSummary(intake),
-				description: notices.bookedDescription(intake, time, offer.name),
-			};
-			if (!offer.hold_id || !(await bookEvent(token, offer.calendar_id, offer.hold_id, booking))) {
-				await createEvent(
-					token,
-					offer.calendar_id,
-					{ ...booking, start: request.slot_start!, end: request.slot_end!, timeZone: env.TIME_ZONE },
-					true,
-				);
-			}
-		} catch (error) {
-			// Not on their calendar, so nobody has it yet: open it again before anyone is told, and the
-			// error page tells the tech to try again.
-			await env.DB.prepare("UPDATE requests SET status = 'pending', confirmed_by = NULL WHERE id = ? AND confirmed_by = ?")
-				.bind(request.id, offer.token)
-				.run();
-			throw error;
+	// Their hold becomes the booking, or they get a new one if they weren't free when it came
+	// in, had declined, or deleted the hold.
+	let token: string;
+	try {
+		token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+		const booking = {
+			summary: notices.bookedSummary(intake),
+			description: notices.bookedDescription(intake, time, offer.name),
+		};
+		if (!offer.hold_id || !(await bookEvent(token, offer.calendar_id, offer.hold_id, booking))) {
+			await createEvent(
+				token,
+				offer.calendar_id,
+				{ ...booking, start: request.slot_start, end: request.slot_end, timeZone: env.TIME_ZONE },
+				true,
+			);
 		}
-
-		// Everyone else's hold goes. One that can't be deleted keeps its id, and the hourly job tries again.
-		const others = offers.filter((other) => other.token !== offer.token && other.hold_id);
-		const results = await Promise.allSettled(
-			others.map(async (other) => {
-				await deleteEvent(token, other.calendar_id, other.hold_id!);
-				await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(other.token).run();
-			}),
-		);
-		for (const result of results) if (result.status === "rejected") console.error(result.reason);
+	} catch (error) {
+		// Not on their calendar, so nobody has it yet: open it again before anyone is told, and the
+		// error page tells the tech to try again.
+		await env.DB.prepare("UPDATE requests SET status = 'pending', confirmed_by = NULL WHERE id = ? AND confirmed_by = ?")
+			.bind(request.id, offer.token)
+			.run();
+		throw error;
 	}
+
+	// Everyone else's hold goes. One that can't be deleted keeps its id, and the hourly job tries again.
+	const others = offers.filter((other) => other.token !== offer.token && other.hold_id);
+	const results = await Promise.allSettled(
+		others.map(async (other) => {
+			await deleteEvent(token, other.calendar_id, other.hold_id!);
+			await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(other.token).run();
+		}),
+	);
+	for (const result of results) if (result.status === "rejected") console.error(result.reason);
 
 	await send(env, [
 		notices.confirmed(intake, time, offer.name),
@@ -162,25 +160,22 @@ async function finish(env: Env, { offer, request }: Loaded) {
 		.run();
 }
 
-// Requests from before times were required have none; they're left open this long before they expire.
-const UNTIMED_DAYS = 7;
-
 // Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
 // customer, then deletes the holds nobody needs any more: a declined tech's, and every hold but
 // the booking once a request is settled. Holds whose delete failed earlier are among them.
 export async function expire(env: Env, now = Date.now()): Promise<void> {
 	const { results: expired } = await env.DB.prepare(
 		`UPDATE requests SET status = 'expired'
-		 WHERE status = 'pending' AND (slot_start <= ?1 OR (slot_start IS NULL AND created <= ?2))
+		 WHERE status = 'pending' AND slot_start <= ?1
 		 RETURNING *`,
 	)
-		.bind(now, now - UNTIMED_DAYS * 86_400_000)
+		.bind(now)
 		.all<RequestRow>();
 	if (expired.length > 0) {
 		await send(
 			env,
 			expired.flatMap((request) => {
-				const intake: StoredIntake = JSON.parse(request.intake);
+				const intake: Intake = JSON.parse(request.intake);
 				const time = timeOf(env, request);
 				return [notices.expired(intake, time), notices.unclaimed(intake, time, env.MAIL_TO)];
 			}),
@@ -284,7 +279,7 @@ export async function page(env: Env, token: string): Promise<Response> {
 							? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
 							: [
 									intake.rush ? "New rush repair request" : "New repair request",
-									`${time ? `Drop-off ${stop(time)} ` : ""}The first tech to take it gets it.`,
+									`Drop-off ${stop(time)} The first tech to take it gets it.`,
 									take + decline,
 								];
 
@@ -293,9 +288,7 @@ export async function page(env: Env, token: string): Promise<Response> {
 		? `<p class="rush">RUSH: +$${intake.rush}, paid in person. It goes to the front of the queue.</p>\n`
 		: "";
 	// Techs call to talk through the price, so the number is one tap away on a phone.
-	const call = intake.phone
-		? `<p class="call"><a href="tel:${escape(dialable(intake.phone))}">Call ${escape(intake.name)}: ${escape(intake.phone)}</a></p>\n`
-		: "";
+	const call = `<p class="call"><a href="tel:${escape(dialable(intake.phone))}">Call ${escape(intake.name)}: ${escape(intake.phone)}</a></p>\n`;
 	return html(
 		title,
 		`<h1>${escape(title)}</h1>
@@ -307,10 +300,11 @@ ${buttons && `<form method="post">${buttons}</form>`}
 }
 
 // The repairs this tech took and hasn't marked done, in the order to work them: rush first, then
-// the earliest drop-off. A tech is their calendar, as everywhere else a request meets one.
+// the earliest drop-off, then the first filed. A tech is their calendar, as everywhere else a
+// request meets one. `rush > 0`, not `rush`: a rush is a rush whatever fee it was quoted at.
 const QUEUE = `SELECT requests.*, offers.token FROM requests JOIN offers ON offers.token = requests.confirmed_by
 	WHERE requests.status = 'confirmed' AND requests.done IS NULL AND offers.calendar_id = ?
-	ORDER BY requests.rush > 0 DESC, requests.slot_start IS NULL, requests.slot_start, requests.created`;
+	ORDER BY requests.rush > 0 DESC, requests.slot_start, requests.created`;
 
 export async function queue(env: Env, token: string): Promise<Response> {
 	const offer = await env.DB.prepare("SELECT * FROM offers WHERE token = ?").bind(token).first<OfferRow>();
@@ -318,11 +312,11 @@ export async function queue(env: Env, token: string): Promise<Response> {
 	const { results } = await env.DB.prepare(QUEUE).bind(offer.calendar_id).all<RequestRow & { token: string }>();
 
 	const items = results.map((request) => {
-		const intake: StoredIntake = JSON.parse(request.intake);
+		const intake: Intake = JSON.parse(request.intake);
 		const time = timeOf(env, request);
 		// The device too, when the title is the service.
-		const details = [time && `Drop-off ${time}`, intake.service && intake.device, intake.name].filter((detail) => detail) as string[];
-		const call = intake.phone ? ` · <a href="tel:${escape(dialable(intake.phone))}">${escape(intake.phone)}</a>` : "";
+		const details = [`Drop-off ${time}`, intake.service && intake.device, intake.name].filter((detail) => detail);
+		const call = ` · <a href="tel:${escape(dialable(intake.phone))}">${escape(intake.phone)}</a>`;
 		return `<li><a class="what" href="/offers/${request.token}">${request.rush ? "RUSH " : ""}${escape(what(intake))}</a><br>
 <span class="details">${details.map(escape).join(" · ")}${call}</span></li>`;
 	});

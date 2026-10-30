@@ -591,28 +591,6 @@ test("a tech without a hold gets the booking created when they take it", async (
 	assert.deepEqual(deleted, [{ calendarId: "sam@example.com", eventId: "hold1" }]);
 });
 
-// A request filed before times and phones were required: no slot, no phone, and a `visit`.
-const legacy = () => {
-	const intake = { name: "Jane", email: "jane@example.com", service: "", device: "PS5", problem: "Loud fan", visit: "house-call", slot: null, notes: "" };
-	db.sqlite.prepare("INSERT INTO requests (id, created, intake) VALUES ('old', ?, ?)").run(Date.now(), JSON.stringify(intake));
-	const token = "00000000-0000-4000-8000-000000000001";
-	db.sqlite
-		.prepare("INSERT INTO offers (token, request_id, position, name, email, calendar_id) VALUES (?, 'old', 0, 'Sam', 'sam@example.com', 'sam@example.com')")
-		.run(token);
-	return `https://intake.test/offers/${token}`;
-};
-
-test("shows and takes a request from before times were required, touching no calendar", async () => {
-	const sam = legacy();
-	const body = await (await offerPage(sam)).text();
-	assert.match(body, /New repair request/);
-	assert.ok(!body.includes("tel:") && !/house/i.test(body));
-	await press(sam, "confirm");
-	assert.equal(status(), "confirmed");
-	assert.equal(holds.length + patched.length + deleted.length, 0);
-	assert.match(text(to("jane@example.com")[0]), /will be in touch to find a time/);
-});
-
 test("declining only takes that tech out, until nobody's left", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
@@ -805,17 +783,6 @@ test("the hourly job deletes another tech's hold that couldn't be deleted when o
 	assert.ok(calendars["sam@example.com"].some((e: any) => e.id === "hold2"));
 });
 
-test("expires a request from before times were required after a week", async () => {
-	legacy();
-	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - 6 * 24 * hour);
-	await tick();
-	assert.equal(status(), "pending");
-	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - 8 * 24 * hour);
-	await tick();
-	assert.equal(status(), "expired");
-	assert.match(text(to("jane@example.com").at(-1)), /none of our techs could take this one/);
-});
-
 test("the hourly job leaves the booking alone", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
@@ -887,18 +854,20 @@ test("fails when no calendar can be read", async () => {
 
 // The queue.
 
-test("the queue migration keeps a rush filed before it ran", () => {
+test("the queue migration clears the test rows and adds the queue's columns", () => {
 	const sqlite = new DatabaseSync(":memory:");
 	const migrations = `${import.meta.dirname}/../migrations`;
 	const files = readdirSync(migrations).sort();
-	for (const file of files.slice(0, 2)) sqlite.exec(readFileSync(`${migrations}/${file}`, "utf8"));
-	const insert = sqlite.prepare("INSERT INTO requests (id, created, intake, status) VALUES (?, 0, ?, 'confirmed')");
-	insert.run("rushed", JSON.stringify({ name: "Jane", rush: 20 }));
-	insert.run("plain", JSON.stringify({ name: "Bob", rush: 0 }));
-	insert.run("old", JSON.stringify({ name: "Ann" }));
-	for (const file of files.slice(2)) sqlite.exec(readFileSync(`${migrations}/${file}`, "utf8"));
-	const rows = sqlite.prepare("SELECT id, rush, done FROM requests ORDER BY id").all();
-	assert.deepEqual(rows.map((row: any) => [row.id, row.rush, row.done]), [["old", 0, null], ["plain", 0, null], ["rushed", 20, null]]);
+	const run = (file: string) => sqlite.exec(readFileSync(`${migrations}/${file}`, "utf8"));
+	files.slice(0, 2).forEach(run);
+	// An old test row from before times were required, with an offer pointing at it.
+	sqlite.prepare("INSERT INTO requests (id, created, intake) VALUES ('old', 0, '{}')").run();
+	sqlite.prepare("INSERT INTO offers (token, request_id, position, name, email, calendar_id) VALUES ('t', 'old', 0, 'Sam', 's', 's')").run();
+	run(files[2]);
+	assert.equal(sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 0);
+	assert.equal(sqlite.prepare("SELECT count(*) AS n FROM offers").get()!.n, 0);
+	sqlite.prepare("INSERT INTO requests (id, created, intake, slot_start, slot_end) VALUES ('new', 0, '{}', 1, 2)").run();
+	assert.deepEqual({ ...sqlite.prepare("SELECT rush, done FROM requests").get() }, { rush: 0, done: null });
 });
 
 const queueOf = (link: string) => worker.fetch(new Request(`${link}/queue`), env);

@@ -85,14 +85,6 @@ test("dials the digits, keeping a leading +", () => {
 	assert.equal(dialable(" +1 416.555.0123"), "+14165550123");
 });
 
-test("summarizes a request from before phones and times were required", () => {
-	// An old row: a `visit` nothing reads now, no phone and no time.
-	const old = JSON.parse('{"name":"Jane","email":"jane@example.com","service":"","device":"PS5","problem":"Loud","visit":"house-call","slot":null,"notes":""}');
-	const text = describe(old, null);
-	assert.match(text, /^Name: Jane\nEmail: jane@example\.com\nDevice: PS5\n/);
-	assert.doesNotMatch(text, /Phone|Drop-off|house|Rush/i);
-});
-
 test("ends a sentence on a time with one period", () => {
 	assert.equal(stop("Tue, Nov 3, 8:00 a.m."), "Tue, Nov 3, 8:00 a.m.");
 	assert.equal(stop("Tue, Nov 3, 08:00"), "Tue, Nov 3, 08:00.");
