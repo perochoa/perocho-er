@@ -32,7 +32,7 @@
 		"MAIL_FROM": "repairs@perocho.com",
 		"MAIL_TO": "repairs@perocho.com",
 		"TIME_ZONE": "America/Toronto",
-		// Drop-off times: steps from the start of each "Available" block, from LEAD_HOURS to DAYS_AHEAD ahead.
+		// Drop-off times: every SLOT_MINUTES on the hour (it should divide 60) inside "Available" blocks, LEAD_HOURS to DAYS_AHEAD ahead.
 		"SLOT_MINUTES": 15,
 		"LEAD_HOURS": 2,
 		"DAYS_AHEAD": 31,

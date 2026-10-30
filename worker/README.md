@@ -16,8 +16,9 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
 
 - **"Available" blocks are when you can receive devices**, not when you repair them. Add an
   event whose title starts with `Available` (e.g. `Available`, `Available - shop`) for each
-  stretch you can be there for drop-offs; a repeating event works. A 13:00-14:00 block offers
-  13:00, 13:15, 13:30 and 13:45. All-day blocks don't count. Delete or shorten a block to stop
+  stretch you can be there for drop-offs; a repeating event works. Times are on the quarter
+  hour inside the block: 13:00-14:00 offers 13:00, 13:15, 13:30 and 13:45, and 13:05-14:00 starts
+  at 13:15. All-day blocks don't count. Delete or shorten a block to stop
   offering that time.
 - **Any number of customers can pick the same time.** Requests and repairs never take a time
   away from anyone else: their events on your calendar are set to "Free".
@@ -57,7 +58,7 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   tech declines or it expires, and if it failed to go through.
 - If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
   the calendar too: the hold has everything the email would have, including your link.
-- Times are offered between 2 hours and 31 days ahead, every 15 minutes from the start of each
+- Times are offered between 2 hours and 31 days ahead, on the quarter hour inside each
   block (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
   `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same.
 

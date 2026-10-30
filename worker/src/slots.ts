@@ -48,8 +48,12 @@ export function openSlots(eventsByTech: CalendarEvent[][], options: SlotOptions)
 		const busy = events.filter(blocks);
 		const free = events.filter((event) => event.available && !event.allDay && !event.declined);
 		for (const block of free) {
-			// Slots line up with the start of the block.
-			for (let start = block.start; start + length <= block.end; start += length) {
+			// Times fall on whole steps: the block's start rounded up to the next multiple of the
+			// slot length since the epoch, which is midnight UTC. Every whole-hour offset keeps
+			// that on the hour, so 15 minutes gives :00, :15, :30 and :45 in TIME_ZONE, as does any
+			// length that divides an hour. A 13:05 block starts at 13:15.
+			const first = Math.ceil(block.start / length) * length;
+			for (let start = first; start + length <= block.end; start += length) {
 				const end = start + length;
 				if (start < earliest || end > latest) continue;
 				if (busy.some((event) => event.start < end && event.end > start)) continue;
