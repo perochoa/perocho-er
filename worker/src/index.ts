@@ -175,11 +175,19 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 			).bind(offer.token, id, position, offer.tech.name, offer.tech.email, offer.tech.calendarId, offer.holdId),
 		),
 	];
-	// Without the rows the links lead nowhere, so let the holds go too.
-	const release = () =>
-		Promise.allSettled(
-			offers.filter((offer) => offer.holdId).map((offer) => deleteEvent(token, offer.tech.calendarId, offer.holdId!)),
+	// Without the rows the links lead nowhere, so let the holds go too. A hold that won't go has no
+	// offer for the cron to find it by, so the log is the only record of it: delete it by hand.
+	const release = async () => {
+		const holding = offers.filter((offer) => offer.holdId);
+		const released = await Promise.allSettled(
+			holding.map((offer) => deleteEvent(token, offer.tech.calendarId, offer.holdId!)),
 		);
+		released.forEach((result, i) => {
+			if (result.status === "rejected") {
+				console.error(`stray hold ${holding[i].holdId} on ${holding[i].tech.calendarId}:`, result.reason);
+			}
+		});
+	};
 	let filed;
 	try {
 		filed = await db.batch(rows);
