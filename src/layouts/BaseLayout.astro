@@ -5,6 +5,7 @@ import "@fontsource/ibm-plex-sans/latin-700.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
+import revealBeforePaint from "../scripts/reveal-before-paint.js?raw";
 
 interface Props {
 	title: string;
@@ -17,6 +18,9 @@ const { title, description, noindex = false } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 // Sharing preview: 1200x630 PNG, as Facebook wants, at an absolute URL.
 const ogImage = new URL("/og-image.png", Astro.site);
+// Astro only hashes the scripts it bundles, so the policy gets this inline one's hash from here.
+const revealHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(revealBeforePaint));
+Astro.csp?.insertScriptHash(`sha256-${btoa(String.fromCharCode(...new Uint8Array(revealHash)))}`);
 ---
 
 <!doctype html>
@@ -38,18 +42,7 @@ const ogImage = new URL("/og-image.png", Astro.site);
 		<meta property="og:image:height" content="630" />
 		<meta property="og:image:alt" content="Perocho Repairs. PS5 repairs and upgrades: stick drift, overheating and HDMI ports." />
 		<meta name="twitter:card" content="summary_large_image" />
-		<script is:inline>
-			// Hides [data-reveal] blocks before the first paint, so they don't show and then vanish when the
-			// scroll-in script below starts. Only with IntersectionObserver and without reduced motion:
-			// otherwise, or if that script never runs, everything is simply there.
-			if (matchMedia("(prefers-reduced-motion: no-preference)").matches && "IntersectionObserver" in window) {
-				const root = document.documentElement;
-				root.classList.add("reveal-on");
-				addEventListener("DOMContentLoaded", () => {
-					if (!root.classList.contains("reveal-ready")) root.classList.remove("reveal-on");
-				});
-			}
-		</script>
+		<script is:inline set:html={revealBeforePaint} />
 	</head>
 	<body>
 		<SiteHeader />
