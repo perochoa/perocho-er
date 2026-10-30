@@ -1046,6 +1046,23 @@ test("the hourly job deletes old requests even when Google sign-in fails", async
 	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
 });
 
+test("the hourly job keeps an old request until its stray holds are deleted", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await withFailing("DELETE", () => press(linkFor("richard@example.com"), "decline"));
+	await withFailing("DELETE", () => press(linkFor("sam@example.com"), "decline"));
+	age(env.RETENTION_DAYS + 1);
+	await withFailing("DELETE", tick);
+	assert.equal(count("requests"), 1);
+	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
+
+	// Once the holds are gone, so is the request.
+	await tick();
+	assert.equal(count("requests"), 0);
+	assert.equal(count("offers"), 0);
+	assert.ok(!calendars["richard@example.com"].some((e: any) => e.id === "hold1"));
+});
+
 test("answers an unknown queue link with 404", async () => {
 	const response = await queueOf("https://intake.test/offers/00000000-0000-4000-8000-000000000000");
 	assert.equal(response.status, 404);

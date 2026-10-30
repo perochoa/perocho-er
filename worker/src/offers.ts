@@ -204,9 +204,12 @@ export async function expire(env: Env, now = Date.now()): Promise<void> {
 	}
 
 	// Settled: nobody took it, or it's back with the customer. A repair still in someone's queue
-	// stays however old it is. Offers first, since they point at the request.
+	// stays however old it is, and so does one with a hold still to delete, since its offer is the
+	// only record of the hold. Offers first, since they point at the request.
 	const settled = `SELECT id FROM requests WHERE slot_start < ?1
-		AND (status IN ('declined', 'expired') OR done IS NOT NULL)`;
+		AND (status IN ('declined', 'expired') OR done IS NOT NULL)
+		AND NOT EXISTS (SELECT 1 FROM offers WHERE offers.request_id = requests.id
+			AND offers.hold_id IS NOT NULL AND offers.token IS NOT requests.confirmed_by)`;
 	const cutoff = now - env.RETENTION_DAYS * 86_400_000;
 	await env.DB.batch([
 		env.DB.prepare(`DELETE FROM offers WHERE request_id IN (${settled})`).bind(cutoff),

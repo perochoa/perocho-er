@@ -166,6 +166,7 @@ Requests, with the customer's name, email, phone and what they wrote, are kept i
 they're in use. The hourly job deletes a request and its offers `RETENTION_DAYS` (180) days
 after its drop-off time once it's settled: declined by every tech, expired, or marked done. A
 repair that's taken but not marked done stays until it is, so it never drops out of a queue.
+One with a calendar hold the job hasn't managed to delete yet stays until the hold is gone.
 The emails and calendar events about it aren't touched. Change it in `wrangler.jsonc`, then
 `npm run types` and deploy.
 
