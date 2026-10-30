@@ -434,8 +434,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	}
 	/* An empty error takes no space but stays in the accessibility tree, so screen readers keep
 	   listening to it as a live region. */
-	.error:empty,
-	:global(.visually-hidden) {
+	.error:empty {
 		position: absolute;
 		width: 1px;
 		height: 1px;
