@@ -142,24 +142,38 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 		throw (held.find((result) => result.status === "rejected") as PromiseRejectedResult).reason;
 	}
 
+	// The check above can't stop the same form sent twice at once, since both pass it before either
+	// is filed. So the insert checks again, atomically, and the offers only go in with their request.
 	const id = crypto.randomUUID();
+	const now = Date.now();
 	const db = env.DB;
 	const rows = [
-		db.prepare("INSERT INTO requests (id, created, intake, slot_start, slot_end, rush) VALUES (?, ?, ?, ?, ?, ?)")
-			.bind(id, Date.now(), JSON.stringify(intake), slot.start, slot.end, intake.rush),
+		db.prepare(
+			`INSERT INTO requests (id, created, intake, slot_start, slot_end, rush) SELECT ?1, ?2, ?3, ?4, ?5, ?6
+			WHERE NOT EXISTS (SELECT 1 FROM requests WHERE intake = ?3 AND created > ?7)`,
+		).bind(id, now, JSON.stringify(intake), slot.start, slot.end, intake.rush, now - REPEAT_MS),
 		...offers.map((offer, position) =>
 			db.prepare(
-				"INSERT INTO offers (token, request_id, position, name, email, calendar_id, hold_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+				`INSERT INTO offers (token, request_id, position, name, email, calendar_id, hold_id)
+				SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE EXISTS (SELECT 1 FROM requests WHERE id = ?2)`,
 			).bind(offer.token, id, position, offer.tech.name, offer.tech.email, offer.tech.calendarId, offer.holdId),
 		),
 	];
-	const holds = offers.filter((offer) => offer.holdId);
+	// Without the rows the links lead nowhere, so let the holds go too.
+	const release = () =>
+		Promise.allSettled(
+			offers.filter((offer) => offer.holdId).map((offer) => deleteEvent(token, offer.tech.calendarId, offer.holdId!)),
+		);
+	let filed;
 	try {
-		await db.batch(rows);
+		filed = await db.batch(rows);
 	} catch (error) {
-		// Without the rows the links lead nowhere, so let the holds go too.
-		await Promise.allSettled(holds.map((offer) => deleteEvent(token, offer.tech.calendarId, offer.holdId!)));
+		await release();
 		throw error;
+	}
+	if (filed[0].meta.changes === 0) {
+		await release();
+		return "sent";
 	}
 
 	const time = formatTime(slot.start, env.TIME_ZONE);

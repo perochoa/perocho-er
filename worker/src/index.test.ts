@@ -372,6 +372,19 @@ test("the same request sent twice is filed once", async () => {
 	assert.equal(mails.length, sent);
 });
 
+test("the same request sent twice at once is filed once, and the other's hold let go", async () => {
+	const responses = await Promise.all([submit({}), submit({})]);
+	for (const response of responses) {
+		assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	}
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 1);
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM offers").get()!.n, 2);
+	assert.equal(holds.length, 2);
+	const kept = db.sqlite.prepare("SELECT hold_id FROM offers WHERE hold_id IS NOT NULL").get()!.hold_id;
+	assert.deepEqual(deleted.map((d) => d.eventId), [kept === "hold1" ? "hold2" : "hold1"]);
+	assert.equal(mails.filter((mail) => mail.to?.[0]?.email === "jane@example.com").length, 1);
+});
+
 test("the same request sent again a while later is a new one", async () => {
 	await submit({});
 	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - hour);
