@@ -279,14 +279,14 @@ ${buttons && `<form method="post">${buttons}</form>`}
 // The repairs this tech took and hasn't marked done, in the order to work them: rush first, then
 // the earliest drop-off, then the first filed. A tech is their calendar, as everywhere else a
 // request meets one. `rush > 0`, not `rush`: a rush is a rush whatever fee it was quoted at.
-const QUEUE = `SELECT requests.*, offers.token FROM requests JOIN offers ON offers.token = requests.confirmed_by
+const QUEUE_SQL = `SELECT requests.*, offers.token FROM requests JOIN offers ON offers.token = requests.confirmed_by
 	WHERE requests.status = 'confirmed' AND requests.done IS NULL AND offers.calendar_id = ?
 	ORDER BY requests.rush > 0 DESC, requests.slot_start, requests.created`;
 
 export async function queue(env: Env, token: string): Promise<Response> {
 	const offer = await env.DB.prepare("SELECT * FROM offers WHERE token = ?").bind(token).first<OfferRow>();
 	if (!offer) return html("Queue not found", "<h1>Queue not found</h1><p>This link doesn't match a request.</p>", 404);
-	const { results } = await env.DB.prepare(QUEUE).bind(offer.calendar_id).all<RequestRow & { token: string }>();
+	const { results } = await env.DB.prepare(QUEUE_SQL).bind(offer.calendar_id).all<RequestRow & { token: string }>();
 
 	const items = results.map((request) => {
 		const intake: Intake = JSON.parse(request.intake);
