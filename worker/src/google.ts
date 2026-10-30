@@ -70,7 +70,6 @@ export async function accessToken(serviceAccountJson: string): Promise<string> {
 
 interface GoogleEvent {
 	id: string;
-	created: string;
 	summary?: string;
 	transparency?: string;
 	start: { dateTime?: string; date?: string };
@@ -78,24 +77,18 @@ interface GoogleEvent {
 	attendees?: { self?: boolean; responseStatus?: string }[];
 }
 
-// `id` and `created` let racing requests agree on whose hold came first.
-export interface ListedEvent extends CalendarEvent {
-	id: string;
-	created: number;
-}
-
 export async function listEvents(
 	token: string,
 	calendarId: string,
 	from: number,
 	to: number,
-): Promise<ListedEvent[]> {
+): Promise<CalendarEvent[]> {
 	const query = new URLSearchParams({
 		timeMin: new Date(from).toISOString(),
 		timeMax: new Date(to).toISOString(),
 		singleEvents: "true",
 		maxResults: "2500",
-		fields: "items(id,created,summary,transparency,start,end,attendees(self,responseStatus))",
+		fields: "items(summary,transparency,start,end,attendees(self,responseStatus))",
 	});
 	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?${query}`, {
 		headers: { Authorization: `Bearer ${token}` },
@@ -104,8 +97,6 @@ export async function listEvents(
 	const { items = [] } = (await response.json()) as { items?: GoogleEvent[] };
 
 	return items.map((item) => ({
-		id: item.id,
-		created: Date.parse(item.created),
 		start: Date.parse(item.start.dateTime ?? item.start.date ?? ""),
 		end: Date.parse(item.end.dateTime ?? item.end.date ?? ""),
 		allDay: !item.start.dateTime,
@@ -123,19 +114,22 @@ export interface NewEvent {
 	timeZone: string;
 }
 
-// A request starts as a tentative hold; a tech confirming it turns it into a booking.
-const look = (booked: boolean) =>
-	booked
+// A request starts as a tentative hold; a tech confirming it turns it into a booking. Both are
+// "Free": the time is a drop-off, which other customers can share, so neither blocks it.
+const look = (booked: boolean) => ({
+	transparency: "transparent",
+	...(booked
 		? { status: "confirmed", colorId: "10" } // Basil: settled.
-		: { status: "tentative", colorId: "5" }; // Banana: stands out until a tech confirms it.
+		: { status: "tentative", colorId: "5" }), // Banana: stands out until a tech confirms it.
+});
 
 export async function createEvent(
 	token: string,
 	calendarId: string,
 	event: NewEvent,
 	booked = false,
-): Promise<{ id: string; created: number }> {
-	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?fields=id,created`, {
+): Promise<string> {
+	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?fields=id`, {
 		method: "POST",
 		headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
 		body: JSON.stringify({
@@ -147,8 +141,7 @@ export async function createEvent(
 		}),
 	});
 	if (!response.ok) throw new Error(`google insert: ${response.status} ${await response.text()}`);
-	const created = (await response.json()) as Pick<GoogleEvent, "id" | "created">;
-	return { id: created.id, created: Date.parse(created.created) };
+	return ((await response.json()) as Pick<GoogleEvent, "id">).id;
 }
 
 // Turns a hold into a booking with a new title and description, keeping its time. False when the

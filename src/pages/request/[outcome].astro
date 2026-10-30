@@ -10,15 +10,16 @@ export function getStaticPaths() {
 			params: { outcome: "sent" },
 			props: {
 				title: "Request sent",
-				text: "Thanks! We've emailed you a copy, and we'll email you again when a tech confirms your drop-off time. A tech may call you about the price. No email? Check your spam folder.",
+				text: "Thanks! We've emailed you a copy, and we'll email you again when a tech confirms your drop-off time. A tech may call you about the price, and will let you know when it's ready. No email? Check your spam folder.",
 				retry: false,
 			},
 		},
 		{
-			params: { outcome: "taken" },
+			// Other requests never close a time; it's now too soon, or a tech's calendar changed.
+			params: { outcome: "closed" },
 			props: {
-				title: "That time was just taken",
-				text: "Someone picked it a moment before you. Go back to the form and pick another time, or message us and we'll find one.",
+				title: "That time isn't open any more",
+				text: "It's now too close to drop off then, or the tech's hours changed. Go back to the form and pick another time, or message us and we'll find one.",
 				retry: true,
 			},
 		},

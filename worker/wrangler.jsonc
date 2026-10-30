@@ -32,9 +32,12 @@
 		"MAIL_FROM": "repairs@perocho.com",
 		"MAIL_TO": "repairs@perocho.com",
 		"TIME_ZONE": "America/Toronto",
-		"SLOT_MINUTES": 60,
+		// Drop-off times: every SLOT_MINUTES on the hour (it should divide 60) inside "Available" blocks, LEAD_HOURS to DAYS_AHEAD ahead.
+		"SLOT_MINUTES": 15,
 		"LEAD_HOURS": 2,
 		"DAYS_AHEAD": 31,
+		// Dollars added for a rush (front of the queue), paid in person. Keep rushFee in src/site.ts the same.
+		"RUSH_FEE": 20,
 		// Comma-separated origins also allowed to read /slots, besides SITE_URL. Leave empty here;
 		// set it in .dev.vars for local work, e.g. DEV_ORIGINS=http://localhost:4321
 		"DEV_ORIGINS": ""

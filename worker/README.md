@@ -1,22 +1,31 @@
 # Intake worker
 
 A Cloudflare Worker behind the site's repair request form (`/request/`). It reads each tech's
-Google Calendar to offer open times, and offers each request to every tech by email, with a
-tentative hold on the calendar of every tech free at the picked time. The first tech to take it
-gets it, and the customer is emailed at each step. Repairs are drop-off only: the picked time is
-when the customer brings the device in. A time and a phone number are required; without JS, or
-when there are no open times, the form points people to Messenger and email instead.
+Google Calendar to offer open drop-off times, and offers each request to every tech by email,
+with a tentative hold on the calendar of every tech free at the picked time. The first tech to
+take it gets it, and the customer is emailed at each step. Repairs are drop-off only: the picked
+time is when the customer brings the device in, and any number of customers can pick the same
+time. When it'll be ready is up to the tech and the customer, by phone or email. A time and a
+phone number are required; without JS, or when there are no open times, the form points people
+to Messenger and email instead. A customer can ask for a rush (+$20, paid in person like the
+rest), which puts their repair at the front of the queue.
 
 Messenger, email and Facebook Marketplace stay as they are. The form is one more way in.
 
 ## For the techs
 
-- **You're only bookable inside your "Available" blocks.** Add an event whose title starts with
-  `Available` (e.g. `Available`, `Available - shop`) for each stretch you can take repairs; a
-  repeating event works. A 13:00-16:00 block offers 13:00, 14:00 and 15:00. All-day blocks don't
-  count. Delete or shorten a block to stop offering that time.
+- **"Available" blocks are when you can receive devices**, not when you repair them. Add an
+  event whose title starts with `Available` (e.g. `Available`, `Available - shop`) for each
+  stretch you can be there for drop-offs; a repeating event works. Times are on the quarter
+  hour inside the block: 13:00-14:00 offers 13:00, 13:15, 13:30 and 13:45, and 13:05-14:00 starts
+  at 13:15. All-day blocks don't count. Delete or shorten a block to stop
+  offering that time.
+- **Any number of customers can pick the same time.** Requests and repairs never take a time
+  away from anyone else: their events on your calendar are set to "Free".
 - **Your other events still block times inside a block.** All-day events, events set to "Free"
   and invites you declined don't.
+- **To take on less, offer fewer drop-off times:** trim your "Available" blocks. Every repair
+  you take joins your queue, so check it before adding more.
 - **Every request is emailed to every tech**, each with their own link, and a copy without
   links goes to `repairs@perocho.com`. If you're free at the picked time it's also on your
   calendar as a yellow, tentative `Request: ...` event, with the details and your link in its
@@ -28,20 +37,29 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
     `Repair: ...` booking (or one is created if you didn't have a hold), everyone else's hold
     is deleted, and the customer and the other techs are emailed. Anyone who presses it after
     you sees that you took it. You can take a request when you're busy (and move what was
-    there), but not one at the same time as a repair you've already taken.
+    there), and as many as you like at the same drop-off time. Then agree with the customer
+    when it'll be ready.
   - **Decline:** takes only you out; your hold is deleted and the others can still take it. You
     can change your mind and take it while it's open. Once every tech has declined, the customer
     is told nobody can take it.
   - **Nobody takes it in time:** once the picked time starts it can't be taken, and within the
     hour it expires: any holds are deleted and the customer is told nobody could take it.
-    Requests sent before a time was required have none; those expire after 7 days.
 - **To cancel or move a booking**, change or delete the event and email the customer yourself.
+- **Your queue** is the "Your queue" link at the bottom of any of your request pages: every
+  repair you've taken and not marked done, rush first, then by drop-off time, each with the
+  customer's number and a link to its page. Press **Mark done** on a repair's page once it's
+  back with the customer and it leaves the queue (nothing is emailed, and the calendar event
+  stays). Only the tech who took it can.
+- **A rush** says `RUSH` in the email subjects, the calendar event's title and on the offer
+  page. The customer was told it's +$20, paid in person with the repair; nothing is charged
+  online.
 - **The customer gets an email** when the request comes in, when a tech takes it, when every
   tech declines or it expires, and if it failed to go through.
 - If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
   the calendar too: the hold has everything the email would have, including your link.
-- Times are offered between 2 hours and 31 days ahead, in 60-minute slots on the hour (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in
-  `wrangler.jsonc`).
+- Times are offered between 2 hours and 31 days ahead, on the quarter hour inside each
+  block (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
+  `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same.
 
 ## Setup
 
@@ -151,7 +169,7 @@ Two defences, neither needing JS:
   they land on the "didn't go through" page and nothing is held or emailed, not even to the
   address they gave, so the form can't be used to flood someone's inbox. Honeypot and invalid
   posts don't count, since they cost nothing. Three covers a first try plus a couple of retries
-  after "that time was just taken"; a real person doesn't send more than that in a minute.
+  after "that time isn't open any more"; a real person doesn't send more than that in a minute.
 
   Change it in `ratelimits` in `wrangler.jsonc` (`limit`, and `period` of 10 or 60 seconds), then
   `npm run types` and deploy. Cloudflare counts per location and only roughly, so a bot spread

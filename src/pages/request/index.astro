@@ -11,8 +11,8 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		<p class="eyebrow">Request a repair</p>
 		<h1>Tell us about your device</h1>
 		<p class="lede">
-			Pick a time to drop your device off, and a tech will call or email you about the price. Nothing is
-			booked until a tech confirms.{" "}
+			Pick a time to drop your device off, and a tech will call or email you about the price and when it'll
+			be ready. Nothing is booked until a tech confirms.{" "}
 			Prefer Facebook? <a href={site.messengerUrl}>Message us on Messenger</a>
 			{
 				site.marketplace && (
@@ -79,26 +79,25 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 								What's wrong?
 								<textarea name="problem" rows="4" maxlength="2000" required></textarea>
 							</label>
+							<label class="check">
+								<input type="checkbox" name="rush" value="1" aria-describedby="rush-hint" />
+								Rush it (+${site.rushFee})
+							</label>
+							<p class="hint" id="rush-hint">Rush repairs go to the front of the queue. You pay for it in person, with the repair.</p>
 						</fieldset>
 					</div>
 
 					<div class="card">
 						<fieldset>
 							<legend>Drop-off time</legend>
-							<p class="hint">When you'll bring your device in. Only times when a tech is free are shown.</p>
+							<p class="hint">When you'll bring your device in. Only times when a tech can take it in are shown.</p>
 							<div class="slots" data-slot-field role="group" aria-labelledby="slot-label" aria-describedby="slot-error" hidden>
 								<span id="slot-label">Pick a day, then a time</span>
-								<div class="week">
-									<button class="step" type="button" data-prev aria-label="Previous week">‹</button>
-									<span data-week-label aria-live="polite"></span>
-									<button class="step" type="button" data-next aria-label="Next week">›</button>
-								</div>
-								<div class="days" data-days></div>
-								<p class="hint" data-day-note></p>
+								<div class="days" data-days role="radiogroup" aria-label="Day"></div>
 								<div data-times></div>
 							</div>
 							<div class="status" aria-live="polite">
-								<p class="hint" data-slot-note></p>
+								<p class="summary" data-slot-note></p>
 								<p class="error" id="slot-error" data-slot-error></p>
 							</div>
 						</fieldset>
@@ -140,10 +139,6 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const field = form.querySelector<HTMLElement>("[data-slot-field]")!;
 		const days = field.querySelector<HTMLElement>("[data-days]")!;
 		const times = field.querySelector<HTMLElement>("[data-times]")!;
-		const weekLabel = field.querySelector<HTMLElement>("[data-week-label]")!;
-		const prev = field.querySelector<HTMLButtonElement>("[data-prev]")!;
-		const next = field.querySelector<HTMLButtonElement>("[data-next]")!;
-		const dayNote = field.querySelector<HTMLElement>("[data-day-note]")!;
 		const note = form.querySelector<HTMLElement>("[data-slot-note]")!;
 		const error = form.querySelector<HTMLElement>("[data-slot-error]")!;
 		const noSlots = form.querySelector<HTMLElement>("[data-no-slots]")!;
@@ -169,150 +164,126 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			phone.setCustomValidity(valid ? "" : "Enter your phone number with its area code, like 416-555-0123.");
 		});
 
-		// Dates are plain calendar days: noon UTC, so adding days and formatting never shifts them.
+		// Dates are plain calendar days: noon UTC, so formatting never shifts them.
 		const noon = (date: string) => new Date(`${date}T12:00:00Z`);
-		const addDays = (date: string, n: number) => new Date(noon(date).getTime() + n * 864e5).toISOString().slice(0, 10);
-		const sundayOf = (date: string) => addDays(date, -noon(date).getUTCDay());
 		const day = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", weekday: "long", month: "long", day: "numeric" });
 		const weekday = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", weekday: "short" });
-		const dayOfMonth = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", day: "numeric" });
-		const range = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", month: "short", day: "numeric" });
+		const monthDay = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", month: "short", day: "numeric" });
+		// Starts before noon, from noon, and from 5 p.m., in the worker's zone.
+		const periods = ["Morning", "Afternoon", "Evening"];
+		const periodOf = (hour: number) => (hour < 12 ? 0 : hour < 17 ? 1 : 2);
 
-		// Set from each /slots response.
-		let dateOf = (start: Date) => start.toISOString().slice(0, 10);
+		// Each day's times, by date; only the picked day's are shown.
 		let groups = new Map<string, HTMLElement>();
-		let weeks: string[] = [];
-		let week = 0;
 		let picked = "";
 
 		const chosen = () => form.querySelector<HTMLInputElement>("[name=slot]:checked");
+		const render = () => groups.forEach((group, date) => (group.hidden = date !== picked));
 
-		// Seven day buttons at a time. The first week starts today, so it shows a full seven days; the
-		// arrows step through the Sunday-to-Saturday weeks after it that have times.
-		const inWeek = (date: string, start: string) => date >= start && date <= addDays(start, 6);
-		const buttons = Array.from({ length: 7 }, () => {
-			const button = Object.assign(document.createElement("button"), { type: "button", className: "day" });
-			button.addEventListener("click", () => {
-				picked = button.dataset.date!;
-				render();
-			});
-			days.append(button);
-			return button;
-		});
-		const render = () => {
-			const start = weeks[week];
-			weekLabel.textContent = range.formatRange(noon(start), noon(addDays(start, 6)));
-			prev.disabled = week === 0;
-			next.disabled = week === weeks.length - 1;
-			buttons.forEach((button, i) => {
-				const date = addDays(start, i);
-				button.dataset.date = date;
-				button.disabled = !groups.has(date);
-				button.setAttribute("aria-pressed", String(date === picked));
-				button.setAttribute("aria-label", day.format(noon(date)) + (button.disabled ? ": no techs available" : ""));
-				button.replaceChildren(Object.assign(document.createElement("span"), { textContent: weekday.format(noon(date)) }), dayOfMonth.format(noon(date)));
-			});
-			groups.forEach((group, date) => (group.hidden = date !== picked));
-			dayNote.textContent = [
-				picked ? "" : "Pick a day to see its times.",
-				buttons.some((button) => button.disabled) ? "Greyed-out days have no techs available." : "",
-			].join(" ").trim();
-			dayNote.hidden = !dayNote.textContent;
-		};
-		const step = (by: number) => {
-			week += by;
-			// A picked time stays picked; its day opens again when its week comes back.
-			const slot = chosen()?.value;
-			const date = slot && dateOf(new Date(slot));
-			picked = date && inWeek(date, weeks[week]) ? date : "";
-			render();
-		};
-		prev.addEventListener("click", () => step(-1));
-		next.addEventListener("click", () => step(1));
-
-		// Ends a sentence on a time without doubling the period of "a.m." and "p.m.".
-		const stop = (text: string) => (text.endsWith(".") ? text : `${text}.`);
-		const describe = (radio: HTMLInputElement | null) => (radio ? `${stop(radio.dataset.label!)} We'll hold it for you until a tech confirms.` : "");
+		const summary = (radio: HTMLInputElement | null) => (radio ? `Drop-off: ${radio.dataset.label}` : "");
 		field.addEventListener("change", (event) => {
 			const radio = event.target as HTMLInputElement;
+			if (radio.name === "day") {
+				picked = radio.value;
+				render();
+			}
 			if (radio.name !== "slot") return;
-			note.textContent = describe(radio);
+			note.textContent = summary(radio);
 			error.textContent = "";
 		});
 
 		// Builds the picker from a /slots response. Called again whenever the times change, so it keeps
-		// their pick, the day they had open and the week they were on wherever those still exist.
-		const show = ({ timeZone, slots }: { timeZone: string; slots: { start: string; end: string }[] }) => {
+		// their pick, the day they had open, their focus and how far they'd scrolled the days.
+		const show = ({ timeZone, slots }: { timeZone: string; slots: { start: string }[] }) => {
 			const before = chosen()?.value ?? "";
-			const focused = document.activeElement instanceof HTMLInputElement && document.activeElement.name === "slot" ? document.activeElement.value : null;
-			const shownWeek = weeks[week];
+			const active = document.activeElement;
+			const focused = active instanceof HTMLInputElement && field.contains(active) ? `[name=${active.name}][value="${active.value}"]` : null;
+			const scrolled = days.scrollLeft;
 
-			// Each slot's calendar date in the worker's zone, so the days match the times it offers and holds.
-			const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
-			dateOf = (start: Date) => {
-				const part = Object.fromEntries(parts.formatToParts(start).map(({ type, value }) => [type, value]));
-				return `${part.year}-${part.month}-${part.day}`;
-			};
+			// Each slot's calendar date and hour in the worker's zone, so the days match the times it
+			// offers and holds.
+			const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "numeric", hourCycle: "h23" });
+			const full = new Intl.DateTimeFormat("en-CA", { timeZone, weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 			const time = new Intl.DateTimeFormat("en-CA", { timeZone, hour: "numeric", minute: "2-digit" });
 
-			// Each day's times are a group of radios, shown only while that day is picked.
 			groups = new Map();
+			days.replaceChildren();
 			times.replaceChildren();
+			let sections: HTMLElement[] = [];
 			for (const slot of slots) {
 				const start = new Date(slot.start);
-				const date = dateOf(start);
+				const part = Object.fromEntries(parts.formatToParts(start).map(({ type, value }) => [type, value]));
+				const date = `${part.year}-${part.month}-${part.day}`;
 				let group = groups.get(date);
 				if (!group) {
 					group = Object.assign(document.createElement("div"), { className: "times", hidden: true });
-					group.setAttribute("role", "radiogroup");
-					group.setAttribute("aria-label", day.format(noon(date)));
 					groups.set(date, group);
 					times.append(group);
+					sections = [];
+
+					const radio = Object.assign(document.createElement("input"), { type: "radio", name: "day", value: date });
+					radio.setAttribute("aria-label", day.format(noon(date)));
+					const chip = Object.assign(document.createElement("label"), { className: "day" });
+					chip.append(radio, Object.assign(document.createElement("span"), { textContent: weekday.format(noon(date)) }), monthDay.format(noon(date)));
+					days.append(chip);
 				}
+
+				// Morning, afternoon and evening, each under its name. Slots come in order, so each
+				// section is made the first time one of its times turns up.
+				const period = periodOf(Number(part.hour));
+				let chips = sections[period];
+				if (!chips) {
+					const id = `slots-${date}-${period}`;
+					const name = Object.assign(document.createElement("p"), { className: "period", id, textContent: periods[period] });
+					chips = Object.assign(document.createElement("div"), { className: "chips" });
+					chips.setAttribute("role", "radiogroup");
+					chips.setAttribute("aria-labelledby", id);
+					sections[period] = chips;
+					group.append(name, chips);
+				}
+
+				// The chip says "1:15" under its heading; the label and summary say "1:15 p.m.".
 				const radio = Object.assign(document.createElement("input"), { type: "radio", name: "slot", value: slot.start, checked: slot.start === before });
-				radio.dataset.label = `${day.format(noon(date))}, ${time.format(start)} to ${time.format(new Date(slot.end))}`;
+				radio.dataset.label = full.format(start);
+				radio.setAttribute("aria-label", time.format(start));
 				const chip = Object.assign(document.createElement("label"), { className: "chip" });
-				chip.append(radio, time.format(start));
-				group.append(chip);
+				chip.append(radio, time.formatToParts(start).filter(({ type }) => type === "hour" || type === "minute").map(({ value }) => value).join(":"));
+				chips.append(chip);
 			}
 
-			const lost = before !== "" && !chosen();
-			if (focused !== null) form.querySelector<HTMLInputElement>(`[name=slot][value="${focused}"]`)?.focus();
-			if (lost) error.textContent = "The time you picked was just taken. Pick another.";
+			if (before !== "" && !chosen()) error.textContent = "The time you picked isn't open any more. Pick another.";
 
 			if (slots.length === 0) {
-				weeks = [];
 				unavailable("There are no open times online right now.");
 				return;
 			}
-			// This week starts today instead of on Sunday.
-			const today = dateOf(new Date());
-			weeks = [...new Set([...groups.keys()].map((date) => (sundayOf(date) < today ? today : sundayOf(date))))].sort();
-			week = Math.max(0, weeks.indexOf(shownWeek));
-			if (!groups.has(picked) || !inWeek(picked, weeks[week])) picked = "";
+			// The day they had open, else the first one with times.
+			if (!groups.has(picked)) picked = groups.keys().next().value!;
+			days.querySelector<HTMLInputElement>(`[value="${picked}"]`)!.checked = true;
 			render();
 			field.hidden = false;
 			send.hidden = false;
 			noSlots.hidden = true;
-			note.textContent = describe(chosen());
+			days.scrollLeft = scrolled;
+			if (focused) field.querySelector<HTMLInputElement>(focused)?.focus();
+			note.textContent = summary(chosen());
 		};
 
 		// Without a picked time the worker turns the request down, so stop here and take them to the
 		// picker. The browser has already checked the other fields by now.
 		form.addEventListener("submit", (event) => {
 			if (chosen()) {
-				// One request per press: a second one would come back "taken", beaten by the first.
+				// One request per press; the worker would only file a second one as the same request.
 				send.disabled = true;
 				return;
 			}
 			event.preventDefault();
-			if (weeks.length === 0) {
+			if (groups.size === 0) {
 				noSlots.focus();
 				return;
 			}
 			error.textContent = "Pick a drop-off time before you send your request.";
-			const target = picked ? groups.get(picked)!.querySelector("input") : buttons.find((button) => !button.disabled);
-			(target ?? next).focus();
+			groups.get(picked)?.querySelector("input")?.focus();
 		});
 		// The back button brings the page back as it was left, so turn the button on again then.
 		window.addEventListener("pageshow", () => (send.disabled = false));
@@ -405,79 +376,84 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		gap: 0.75rem;
 		min-width: 0;
 	}
-	.week {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		font-weight: 600;
-	}
+	/* One row of days that scrolls sideways, out to the card's edges so it's clear there's more. */
 	.days {
-		display: grid;
-		grid-template-columns: repeat(7, minmax(0, 1fr));
-		gap: 0.375rem;
+		display: flex;
+		gap: 0.5rem;
+		margin-inline: -1.5rem;
+		padding: 0.25rem 1.5rem 0.375rem;
+		overflow-x: auto;
+		overscroll-behavior-x: contain;
+		scroll-padding-inline: 1.5rem;
+		scroll-snap-type: x proximity;
 	}
-	.step,
 	.slots :global(.day),
 	.slots :global(.chip) {
+		position: relative;
 		border: 1px solid var(--line);
 		border-radius: 0.5rem;
 		background: var(--bg);
 		color: var(--ink);
-		font: inherit;
 		cursor: pointer;
-	}
-	.step {
-		width: 2.75rem;
-		height: 2.75rem;
-		font-size: 1.25rem;
-		line-height: 1;
 	}
 	.slots :global(.day) {
 		display: grid;
+		flex: none;
 		justify-items: center;
-		padding: 0.5rem 0;
+		gap: 0;
+		min-width: 4.25rem;
+		padding: 0.5rem 0.625rem;
 		font-size: 0.9375rem;
-	}
-	.step:disabled,
-	.slots :global(.day:disabled) {
-		opacity: 0.4;
-		cursor: default;
+		scroll-snap-align: start;
 	}
 	.slots :global(.day span) {
 		color: var(--muted);
 		font-size: 0.8125rem;
+		font-weight: 400;
 	}
-	.step:hover:not(:disabled),
-	.slots :global(.day:hover:not(:disabled)),
+	.slots :global(.day:hover),
 	.slots :global(.chip:hover) {
 		border-color: var(--accent);
 	}
-	.slots :global(.day[aria-pressed="true"]),
+	.slots :global(.day:has(:checked)),
 	.slots :global(.chip:has(:checked)) {
 		border-color: var(--accent);
 		background: var(--accent);
 		color: var(--on-accent);
 	}
-	.slots :global(.day[aria-pressed="true"] span) {
+	.slots :global(.day:has(:checked) span) {
 		color: inherit;
 	}
 	.slots :global(.times) {
 		display: grid;
-		grid-template-columns: repeat(auto-fill, minmax(6.5rem, 1fr));
+		gap: 0.5rem;
+	}
+	.slots :global(.period) {
+		margin: 0.25rem 0 0;
+		color: var(--muted);
+		font-size: 0.875rem;
+		font-weight: 600;
+	}
+	.slots :global(.chips) {
+		display: grid;
+		grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
 		gap: 0.5rem;
 	}
 	.slots :global(.chip) {
 		display: block;
-		position: relative;
-		padding: 0.625rem 0.5rem;
+		padding: 0.625rem 0.25rem;
 		text-align: center;
 		font-weight: 400;
+		font-variant-numeric: tabular-nums;
 	}
+	/* The radios stay in the page, so the keyboard and screen readers get them; the chip is what shows. */
+	.slots :global(.day input),
 	.slots :global(.chip input) {
 		position: absolute;
 		opacity: 0;
 		pointer-events: none;
 	}
+	.slots :global(.day:has(:focus-visible)),
 	.slots :global(.chip:has(:focus-visible)) {
 		outline: 2px solid var(--accent);
 		outline-offset: 2px;
@@ -486,7 +462,24 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	.slots :global([hidden]) {
 		display: none;
 	}
-	input:not([type="radio"]),
+	.summary {
+		margin: 0;
+		font-weight: 600;
+	}
+	.check {
+		display: flex;
+		align-items: center;
+		gap: 0.625rem;
+		cursor: pointer;
+	}
+	.check input {
+		flex: none;
+		width: 1.25rem;
+		height: 1.25rem;
+		margin: 0;
+		accent-color: var(--accent);
+	}
+	input:not([type="radio"], [type="checkbox"]),
 	select,
 	textarea {
 		box-sizing: border-box;

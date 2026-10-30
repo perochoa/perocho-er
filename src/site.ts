@@ -17,6 +17,8 @@ interface Site {
 	hours?: string;
 	// The intake Worker (worker/). Unset hides the request form and every link to it.
 	intakeUrl?: string;
+	// Dollars added to move a repair to the front of the queue. Keep RUSH_FEE in worker/wrangler.jsonc the same.
+	rushFee: number;
 }
 
 export const site: Site = {
@@ -34,6 +36,7 @@ export const site: Site = {
 	},
 	serviceArea: "Mississauga, drop-off only. Message us for the address.",
 	// Assumes the request form is on (intakeUrl): its times come from the techs' calendars.
-	hours: "Whenever a tech is free. The request form shows the open times.",
+	hours: "Drop-off whenever a tech can take devices in. The request form shows the open times.",
 	intakeUrl: "https://perocho-intake.perocho-xela.workers.dev",
+	rushFee: 20,
 };

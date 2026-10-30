@@ -103,7 +103,7 @@ async function checkCalendar(token: string, tech: Tech, now: number) {
 	}).length;
 	const window = `in the next ${vars.DAYS_AHEAD} days`;
 	if (blocks === 0) warn(`no timed "Available..." blocks ${window}, so they won't be offered any times`);
-	else if (slots === 0) warn(`${blocks} "Available..." block${blocks === 1 ? "" : "s"} ${window}, but every time in them is taken or too soon`);
+	else if (slots === 0) warn(`${blocks} "Available..." block${blocks === 1 ? "" : "s"} ${window}, but other events cover every time in them, or they are too soon`);
 	else ok(`${blocks} "Available..." block${blocks === 1 ? "" : "s"}, ${slots} open time${slots === 1 ? "" : "s"} ${window}`);
 }
 
