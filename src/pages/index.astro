@@ -90,18 +90,15 @@ const steps = site.intakeUrl
 						}
 					</div>
 					{
-						site.marketplace && (
+						marketplace && (
 							<a class="rating" href="#reviews">
-								{marketplace.highlyRated && (
-									<span class="badge">
-										<Rosette />
-										Highly rated on Facebook Marketplace
-									</span>
-								)}
+								<span class="badge">
+									<Rosette />
+									Highly rated on Facebook Marketplace
+								</span>
 								<span>
-									<span class="stars" aria-hidden="true">{"★".repeat(site.marketplace.stars)}</span>{" "}
-									{site.marketplace.stars} stars from {site.marketplace.ratings} ratings
-									{!marketplace.highlyRated && " on Facebook Marketplace"}
+									<span class="stars" aria-hidden="true">{"★".repeat(marketplace.stars)}</span>{" "}
+									{marketplace.stars} stars from {marketplace.ratings} ratings
 								</span>
 							</a>
 						)
@@ -180,7 +177,7 @@ const steps = site.intakeUrl
 		</section>
 
 		{
-			site.marketplace && (
+			marketplace && (
 				<section id="reviews" class="band alt" aria-labelledby="reviews-title">
 					<div class="wrap">
 						<div data-reveal>
@@ -190,32 +187,30 @@ const steps = site.intakeUrl
 						<div class="reviews">
 							<div class="summary" data-reveal>
 								<p class="score">
-									<strong>{site.marketplace.stars.toFixed(1)}</strong>
+									<strong>{marketplace.stars.toFixed(1)}</strong>
 									<span>
-										<span class="stars" aria-hidden="true">{"★".repeat(site.marketplace.stars)}</span>
-										<span>{site.marketplace.ratings} ratings on Facebook Marketplace</span>
+										<span class="stars" aria-hidden="true">{"★".repeat(marketplace.stars)}</span>
+										<span>{marketplace.ratings} ratings on Facebook Marketplace</span>
 									</span>
 								</p>
-								{marketplace.highlyRated && (
-									<p class="badge big">
-										<Rosette />
-										<span>
-											<strong>Highly rated</strong>
-											<span>4.5 stars or higher from at least 5 buyers</span>
-										</span>
-									</p>
-								)}
+								<p class="badge big">
+									<Rosette />
+									<span>
+										<strong>Highly rated</strong>
+										<span>4.5 stars or higher from at least 5 buyers</span>
+									</span>
+								</p>
 								<h3>What customers pointed out</h3>
 								<ul class="strengths">
 									{marketplace.strengths.map(({ label, count }, i) => (
-										<li style={`--share: ${count / site.marketplace!.ratings}; --i: ${i}`}>
+										<li style={`--share: ${count / marketplace!.ratings}; --i: ${i}`}>
 											<span>{label}</span>
 											<span class="count">{count}</span>
 											<span class="bar" aria-hidden="true" />
 										</li>
 									))}
 								</ul>
-								<a class="ask" href={site.marketplace.url}>
+								<a class="ask" href={marketplace.url}>
 									See the profile on Marketplace <span aria-hidden="true">→</span>
 								</a>
 							</div>
@@ -241,7 +236,7 @@ const steps = site.intakeUrl
 											{review.notable.map((tag) => <li>{tag}</li>)}
 										</ul>
 										{/* Marketplace has no link to a single review; the profile lists them under "Reviews of". */}
-										<a class="source" href={site.marketplace!.url}>
+										<a class="source" href={marketplace!.url}>
 											<span class="visually-hidden">{review.name}'s review </span>On Facebook Marketplace{" "}
 											<span aria-hidden="true">↗</span>
 										</a>
@@ -337,10 +332,10 @@ const steps = site.intakeUrl
 								)
 							}{" "}
 							{
-								site.marketplace && (
+								marketplace && (
 									<>
 										See our listings and reviews on{" "}
-										<a href={site.marketplace.url}>Facebook Marketplace</a>.
+										<a href={marketplace.url}>Facebook Marketplace</a>.
 									</>
 								)
 							}

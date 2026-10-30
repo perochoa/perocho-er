@@ -1,13 +1,14 @@
 ---
 import { getCollection } from "astro:content";
 import Logo from "./Logo.astro";
+import { marketplace } from "../reviews";
 import { site } from "../site";
 
 // Links point at "/#..." so they also work from the 404 page.
 const hasRepairs = (await getCollection("repairs")).length > 0;
 const links = [
 	{ href: "/#services", label: "Services" },
-	...(site.marketplace ? [{ href: "/#reviews", label: "Reviews" }] : []),
+	...(marketplace ? [{ href: "/#reviews", label: "Reviews" }] : []),
 	{ href: "/#how", label: "How it works" },
 	...(hasRepairs ? [{ href: "/#repairs", label: "Past repairs" }] : []),
 	{ href: "/#contact", label: "Contact" },

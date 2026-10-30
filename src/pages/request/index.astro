@@ -1,6 +1,7 @@
 ---
 import { getCollection } from "astro:content";
 import BaseLayout from "../../layouts/BaseLayout.astro";
+import { marketplace } from "../../reviews";
 import { site } from "../../site";
 
 const services = (await getCollection("services")).sort((a, b) => a.data.order - b.data.order);
@@ -15,9 +16,9 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			be ready. Nothing is booked until a tech confirms.{" "}
 			Prefer Facebook? <a href={site.messengerUrl}>Message us on Messenger</a>
 			{
-				site.marketplace && (
+				marketplace && (
 					<>
-						{" "}or find us on <a href={site.marketplace.url}>Marketplace</a>
+						{" "}or find us on <a href={marketplace.url}>Marketplace</a>
 					</>
 				)
 			}.
