@@ -1020,6 +1020,32 @@ test("the hourly job keeps a settled request until it's old enough", async () =>
 	assert.equal(count("offers"), 2);
 });
 
+test("the hourly job deletes old requests even when Google sign-in fails", async () => {
+	// A request with a declined tech's hold still on the calendar, and an old finished one.
+	both();
+	await submit({ slot: iso(slotStart) });
+	await withFailing("DELETE", () => press(linkFor("richard@example.com"), "decline"));
+	await press(await taken({ slot: iso(slotStart + 2 * quarter) }), "done");
+	db.sqlite
+		.prepare("UPDATE requests SET slot_start = ?1, slot_end = ?1 + ?2 WHERE done IS NOT NULL")
+		.run(Date.now() - (env.RETENTION_DAYS + 1) * day, quarter);
+
+	resetTokenCache();
+	const fake = globalThis.fetch;
+	globalThis.fetch = async (input, init) =>
+		String(input) === "https://oauth2.googleapis.com/token" ? new Response("down", { status: 500 }) : fake(input, init);
+	const original = console.error;
+	console.error = () => {};
+	try {
+		await tick();
+	} finally {
+		globalThis.fetch = fake;
+		console.error = original;
+	}
+	assert.equal(count("requests"), 1);
+	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
+});
+
 test("answers an unknown queue link with 404", async () => {
 	const response = await queueOf("https://intake.test/offers/00000000-0000-4000-8000-000000000000");
 	assert.equal(response.status, 404);

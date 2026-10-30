@@ -189,8 +189,9 @@ export async function expire(env: Env, now = Date.now()): Promise<void> {
 		 WHERE offers.hold_id IS NOT NULL AND offers.token IS NOT requests.confirmed_by
 		 AND (offers.declined = 1 OR requests.status != 'pending')`,
 	).all<OfferRow>();
-	if (strays.length > 0) {
-		const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+	// Without Google the holds wait for the next run, but the retention delete below still runs.
+	const token = strays.length > 0 ? await accessToken(env.GOOGLE_SERVICE_ACCOUNT).catch((error) => console.error(error)) : undefined;
+	if (token) {
 		for (const offer of strays) {
 			try {
 				await deleteEvent(token, offer.calendar_id, offer.hold_id!);
