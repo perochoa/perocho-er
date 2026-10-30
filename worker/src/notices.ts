@@ -105,27 +105,21 @@ export const confirmed = (intake: Intake, time: string, tech: string): Message =
 	].join("\n"),
 });
 
-export const declined = (intake: Intake, time: string): Message => ({
+// Neither a decline nor an expiry can be booked, so the customer gets the same way out.
+const turnedAway = (intake: Intake, time: string, cant: string, couldnt: string): Message => ({
 	to: intake.email,
-	subject: `We can't take your repair request: ${what(intake)}`,
+	subject: `We ${cant} take your repair request: ${what(intake)}`,
 	text: [
 		hi(intake),
 		"",
-		`Sorry, none of our techs can make ${stop(time)} Reply to this email and we'll try to find another time, or send the form again with a different one.`,
+		`Sorry, none of our techs ${couldnt} ${stop(time)} Reply to this email and we'll try to find another time, or send the form again with a different one.`,
 		...yours(intake, time),
 	].join("\n"),
 });
 
-export const expired = (intake: Intake, time: string): Message => ({
-	to: intake.email,
-	subject: `We couldn't take your repair request: ${what(intake)}`,
-	text: [
-		hi(intake),
-		"",
-		`Sorry, none of our techs could confirm ${stop(time)} Reply to this email and we'll try to find another time, or send the form again with a different one.`,
-		...yours(intake, time),
-	].join("\n"),
-});
+export const declined = (intake: Intake, time: string): Message => turnedAway(intake, time, "can't", "can make");
+
+export const expired = (intake: Intake, time: string): Message => turnedAway(intake, time, "couldn't", "could confirm");
 
 // To the other techs and repairs@, so nobody plans around it any more.
 export const taken = (intake: Intake, time: string, to: string, tech: string): Message => ({
@@ -134,14 +128,14 @@ export const taken = (intake: Intake, time: string, to: string, tech: string): M
 	text: `${tech} took this request, so any hold for it comes off your calendar.\n\n${describe(intake, time)}`,
 });
 
-export const nobody = (intake: Intake, time: string, to: string): Message => ({
+const closed = (intake: Intake, time: string, to: string, subject: string, lead: string): Message => ({
 	to,
-	subject: `Every tech declined: ${about(intake, time)}`,
-	text: `Every tech declined this request, and the customer has been told.\n\n${describe(intake, time)}`,
+	subject: `${subject}: ${about(intake, time)}`,
+	text: `${lead} and the customer has been told.\n\n${describe(intake, time)}`,
 });
 
-export const unclaimed = (intake: Intake, time: string, to: string): Message => ({
-	to,
-	subject: `Nobody took: ${about(intake, time)}`,
-	text: `Nobody took this request in time, so it's closed and the customer has been told.\n\n${describe(intake, time)}`,
-});
+export const nobody = (intake: Intake, time: string, to: string): Message =>
+	closed(intake, time, to, "Every tech declined", "Every tech declined this request,");
+
+export const unclaimed = (intake: Intake, time: string, to: string): Message =>
+	closed(intake, time, to, "Nobody took", "Nobody took this request in time, so it's closed");
