@@ -216,7 +216,7 @@ const steps = site.intakeUrl
 								{marketplace.reviews.map((review, i) => (
 									<li class="card quote" data-reveal style={`--i: ${i + 1}`}>
 										<figure>
-											<p class="stars" aria-label={`${review.stars} out of 5 stars`}>
+											<p class="stars" role="img" aria-label={`${review.stars} out of 5 stars`}>
 												{"★".repeat(review.stars)}
 											</p>
 											<blockquote>
@@ -356,7 +356,7 @@ const steps = site.intakeUrl
 								</button>
 							</span>
 						</div>
-						<p class="copied" data-copy-status aria-live="polite"></p>
+						<p class="visually-hidden" data-copy-status aria-live="polite"></p>
 					</div>
 					{
 						(site.serviceArea || site.hours) && (
@@ -395,7 +395,7 @@ const steps = site.intakeUrl
 		const note = calc.querySelector<HTMLElement>("[data-note]")!;
 		const minus = calc.querySelector<HTMLButtonElement>('[data-step="-1"]')!;
 		const MAX = 12;
-		let count = 2;
+		let count = Number(output.value);
 
 		const render = () => {
 			const each = count >= bulkFrom ? bulkPrice : price;
@@ -1154,13 +1154,6 @@ const steps = site.intakeUrl
 	.copy.is-copied .tick {
 		opacity: 1;
 		transform: none;
-	}
-	.copied {
-		position: absolute;
-		width: 1px;
-		height: 1px;
-		overflow: hidden;
-		clip-path: inset(50%);
 	}
 	.details {
 		display: grid;
