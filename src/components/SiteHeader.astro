@@ -5,6 +5,12 @@ import { site } from "../site";
 
 // Links point at "/#..." so they also work from the 404 page.
 const hasRepairs = (await getCollection("repairs")).length > 0;
+const links = [
+	{ href: "/#services", label: "Services" },
+	{ href: "/#how", label: "How it works" },
+	...(hasRepairs ? [{ href: "/#repairs", label: "Past repairs" }] : []),
+	{ href: "/#contact", label: "Contact" },
+];
 ---
 
 <header class="site-header">
@@ -14,14 +20,77 @@ const hasRepairs = (await getCollection("repairs")).length > 0;
 			<span>Perocho <span class="accent">Repairs</span></span>
 		</a>
 		<nav aria-label="Sections">
-			<a href="/#services">Services</a>
-			<a href="/#how">How it works</a>
-			{hasRepairs && <a href="/#repairs">Past repairs</a>}
-			<a href="/#contact">Contact</a>
+			{links.map((link) => <a href={link.href}>{link.label}</a>)}
 		</nav>
 		<a class="button small" href={site.messengerUrl}>Message us</a>
+		<!-- Phones: the same links in a dropdown; <details> opens it without JS. -->
+		<details class="menu">
+			<summary aria-label="Menu">
+				<span class="bars" aria-hidden="true"><span></span><span></span><span></span></span>
+			</summary>
+			<nav aria-label="Sections">
+				{links.map((link) => <a href={link.href}>{link.label}</a>)}
+				{site.intakeUrl && <a href="/request/">Request a repair</a>}
+			</nav>
+		</details>
 	</div>
 </header>
+
+<script>
+	const header = document.querySelector<HTMLElement>(".site-header")!;
+	const menu = header.querySelector<HTMLDetailsElement>(".menu")!;
+
+	// A shadow once the page has scrolled under the bar.
+	const top = document.createElement("div");
+	top.style.cssText = "position:absolute;top:0;height:1px;width:1px;pointer-events:none";
+	document.body.prepend(top);
+	new IntersectionObserver(([entry]) => header.classList.toggle("is-scrolled", !entry.isIntersecting)).observe(top);
+
+	// Close the phone menu after a pick, a tap elsewhere or Escape.
+	menu.addEventListener("click", (event) => {
+		if ((event.target as Element).closest("a")) menu.open = false;
+	});
+	document.addEventListener("click", (event) => {
+		if (menu.open && !menu.contains(event.target as Node)) menu.open = false;
+	});
+	document.addEventListener("keydown", (event) => {
+		if (event.key !== "Escape" || !menu.open) return;
+		menu.open = false;
+		menu.querySelector("summary")!.focus();
+	});
+
+	// Mark the link for the section in view. Only on the page that has the sections.
+	const links = [...header.querySelectorAll<HTMLAnchorElement>("a[href^='/#']")];
+	const sections = new Map<Element, HTMLAnchorElement[]>();
+	for (const link of links) {
+		const section = document.getElementById(link.hash.slice(1));
+		if (section) sections.set(section, [...(sections.get(section) ?? []), link]);
+	}
+	if (sections.size) {
+		const visible = new Set<Element>();
+		const mark = () => {
+			// The first section (in page order) that is in the band near the top of the screen.
+			const current = [...sections.keys()].find((section) => visible.has(section));
+			for (const [section, sectionLinks] of sections) {
+				for (const link of sectionLinks) {
+					if (section === current) link.setAttribute("aria-current", "location");
+					else link.removeAttribute("aria-current");
+				}
+			}
+		};
+		const observer = new IntersectionObserver(
+			(entries) => {
+				for (const entry of entries) {
+					if (entry.isIntersecting) visible.add(entry.target);
+					else visible.delete(entry.target);
+				}
+				mark();
+			},
+			{ rootMargin: "-30% 0px -60% 0px" },
+		);
+		sections.forEach((_, section) => observer.observe(section));
+	}
+</script>
 
 <style>
 	.site-header {
@@ -31,6 +100,10 @@ const hasRepairs = (await getCollection("repairs")).length > 0;
 		background: color-mix(in srgb, var(--bg) 88%, transparent);
 		backdrop-filter: blur(8px);
 		border-bottom: 1px solid var(--line);
+		transition: box-shadow 0.2s;
+	}
+	.site-header.is-scrolled {
+		box-shadow: 0 6px 20px -12px color-mix(in srgb, var(--ink) 35%, transparent);
 	}
 	.bar {
 		display: flex;
@@ -46,6 +119,7 @@ const hasRepairs = (await getCollection("repairs")).length > 0;
 		font-size: 1.125rem;
 		font-weight: 700;
 		text-decoration: none;
+		white-space: nowrap;
 	}
 	.brand :global(svg) {
 		color: var(--accent);
@@ -59,13 +133,108 @@ const hasRepairs = (await getCollection("repairs")).length > 0;
 		margin-left: auto;
 	}
 	nav a {
+		position: relative;
 		color: var(--muted);
 		font-weight: 600;
 		font-size: 0.9375rem;
 		text-decoration: none;
+		transition: color 0.15s;
 	}
-	nav a:hover {
+	nav a:hover,
+	nav a[aria-current] {
 		color: var(--accent);
+	}
+	/* Underline that grows in under the hovered or current link. */
+	.bar > nav a::after {
+		content: "";
+		position: absolute;
+		left: 0;
+		right: 0;
+		bottom: -0.25rem;
+		height: 2px;
+		border-radius: 1px;
+		background: var(--accent);
+		transform: scaleX(0);
+		transition: transform 0.2s ease-out;
+	}
+	.bar > nav a:hover::after,
+	.bar > nav a[aria-current]::after {
+		transform: scaleX(1);
+	}
+	.menu {
+		display: none;
+		position: relative;
+		margin-left: -0.75rem;
+	}
+	.menu summary {
+		display: grid;
+		place-items: center;
+		width: 2.5rem;
+		height: 2.5rem;
+		border: 1px solid var(--line);
+		border-radius: 0.5rem;
+		cursor: pointer;
+		list-style: none;
+	}
+	.menu summary::-webkit-details-marker {
+		display: none;
+	}
+	.bars {
+		display: grid;
+		gap: 4px;
+		width: 1.125rem;
+	}
+	.bars span {
+		height: 2px;
+		border-radius: 1px;
+		background: var(--ink);
+		transition:
+			transform 0.2s,
+			opacity 0.2s;
+	}
+	/* The three bars fold into a cross while open. */
+	.menu[open] .bars span:nth-child(1) {
+		transform: translateY(6px) rotate(45deg);
+	}
+	.menu[open] .bars span:nth-child(2) {
+		opacity: 0;
+	}
+	.menu[open] .bars span:nth-child(3) {
+		transform: translateY(-6px) rotate(-45deg);
+	}
+	.menu nav {
+		position: absolute;
+		right: 0;
+		top: calc(100% + 0.5rem);
+		flex-direction: column;
+		gap: 0;
+		min-width: 13rem;
+		padding: 0.375rem;
+		background: var(--surface);
+		border: 1px solid var(--line);
+		border-radius: 0.75rem;
+		box-shadow: 0 12px 32px -12px color-mix(in srgb, var(--ink) 40%, transparent);
+		animation: drop 0.18s ease-out;
+	}
+	.menu nav a {
+		padding: 0.625rem 0.75rem;
+		border-radius: 0.5rem;
+		color: var(--ink);
+	}
+	.menu nav a:hover,
+	.menu nav a[aria-current] {
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
+	}
+	@keyframes drop {
+		from {
+			opacity: 0;
+			transform: translateY(-0.375rem);
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.menu nav {
+			animation: none;
+		}
 	}
 	.button {
 		margin-left: auto;
@@ -73,13 +242,27 @@ const hasRepairs = (await getCollection("repairs")).length > 0;
 	nav + .button {
 		margin-left: 0;
 	}
-	/* On phones the sections are a short scroll away; keep the bar to brand and button. */
+	/* On phones the sections move into the menu; the bar keeps the brand, the button and the menu. */
 	@media (max-width: 48rem) {
-		nav {
+		.bar > nav {
 			display: none;
 		}
 		nav + .button {
 			margin-left: auto;
+		}
+		.menu {
+			display: block;
+		}
+	}
+	@media (max-width: 26rem) {
+		.bar {
+			gap: 0.75rem;
+		}
+		.menu {
+			margin-left: 0;
+		}
+		.brand {
+			font-size: 1rem;
 		}
 	}
 </style>
