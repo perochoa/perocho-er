@@ -78,8 +78,6 @@ async function slots(env: Env, month: string | null, origin: string | null, ip: 
 // Each outcome is a page in src/pages/request/[outcome].astro, so add or remove them together.
 // "closed": the picked time isn't open any more (now inside the lead time, or a tech changed their
 // blocks or added an event); other requests never close a time, since drop-offs share them.
-type Outcome = "sent" | "closed" | "failed";
-
 async function request(env: Env, form: FormData, ip: string | null, origin: string): Promise<Outcome> {
 	const parsed = parseIntake(form, env.RUSH_FEE);
 	if (!parsed.ok) return parsed.spam ? "sent" : "failed";
