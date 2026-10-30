@@ -1,10 +1,11 @@
 // A request offered to each tech. Their link opens a page that shows the request and lets them
-// take or decline it. The page only shows it; the buttons POST, because mail scanners open the
-// links in emails and must not take requests by doing so.
+// take or decline it, and mark it done once they've taken it. The page only shows it; the buttons
+// POST, because mail scanners open the links in emails and must not take requests by doing so.
+// Each link also opens that tech's queue: the repairs they took and haven't marked done.
 
 import { type Mail, sendMail } from "./fastmail.ts";
 import { accessToken, bookEvent, createEvent, deleteEvent } from "./google.ts";
-import { describe, dialable, formatTime, stop, type StoredIntake } from "./intake.ts";
+import { describe, dialable, formatTime, stop, type StoredIntake, what } from "./intake.ts";
 import * as notices from "./notices.ts";
 
 interface RequestRow {
@@ -14,6 +15,8 @@ interface RequestRow {
 	slot_end: number | null;
 	status: "pending" | "confirmed" | "declined" | "expired";
 	confirmed_by: string | null;
+	rush: number; // the fee, 0 for none
+	done: number | null; // when the tech who took it marked it done
 }
 
 interface OfferRow {
@@ -150,6 +153,15 @@ async function decline(env: Env, { offer, request, intake }: Loaded) {
 	await send(env, [notices.declined(intake, time), notices.nobody(intake, time, env.MAIL_TO)]);
 }
 
+// Out of the taker's queue once it's back with the customer. Only they can, and only once.
+async function finish(env: Env, { offer, request }: Loaded) {
+	await env.DB.prepare(
+		"UPDATE requests SET done = ?3 WHERE id = ?1 AND status = 'confirmed' AND confirmed_by = ?2 AND done IS NULL",
+	)
+		.bind(request.id, offer.token, Date.now())
+		.run();
+}
+
 // Requests from before times were required have none; they're left open this long before they expire.
 const UNTIMED_DAYS = 7;
 
@@ -198,6 +210,7 @@ export async function act(env: Env, token: string, action: string): Promise<void
 	if (!loaded) return;
 	if (action === "confirm") await confirm(env, loaded);
 	if (action === "decline") await decline(env, loaded);
+	if (action === "done") await finish(env, loaded);
 }
 
 const escape = (text: string) =>
@@ -224,6 +237,12 @@ const html = (title: string, body: string, status = 200) =>
 	button[value="confirm"] { background: var(--accent); color: Canvas; }
 	.call { margin: 0 0 1rem; }
 	.rush { margin: 0 0 1rem; font-weight: 700; }
+	.mine { margin: 1.5rem 0 0; }
+	.mine a, .queue a { color: var(--accent); }
+	.queue { padding-left: 1.5rem; margin: 0 0 1.5rem; }
+	.queue li { margin: 0 0 1rem; }
+	.queue .what { font-weight: 600; }
+	.queue .details { color: var(--muted); }
 	.call a { color: var(--accent); font-weight: 600; }
 </style>
 </head>
@@ -242,11 +261,18 @@ export async function page(env: Env, token: string): Promise<Response> {
 	const taker = offers.find((other) => other.token === request.confirmed_by);
 
 	const take = '<button name="action" value="confirm">Take it</button>';
+	const done = '<button name="action" value="done">Mark done</button>';
 	const decline = offer.declined ? "" : '<button name="action" value="decline">Decline</button>';
 	const [title, state, buttons] =
 		request.status === "confirmed"
 			? taker?.token === offer.token
-				? ["You took this request", "It's yours, and the customer has been told. Agree with them when it'll be ready.", ""]
+				? request.done !== null
+					? ["You finished this repair", "It's out of your queue.", ""]
+					: [
+							"You took this request",
+							"It's yours, and the customer has been told. Agree with them when it'll be ready, and mark it done once it's back with them.",
+							done,
+						]
 				: [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""]
 			: request.status === "declined"
 				? ["Every tech declined this request", "The customer has been told.", ""]
@@ -275,6 +301,42 @@ export async function page(env: Env, token: string): Promise<Response> {
 		`<h1>${escape(title)}</h1>
 <p class="state">${escape(state)}</p>
 ${rush}${call}<pre>${escape(describe(intake, time))}</pre>
-${buttons && `<form method="post">${buttons}</form>`}`,
+${buttons && `<form method="post">${buttons}</form>`}
+<p class="mine"><a href="/offers/${offer.token}/queue">Your queue</a></p>`,
+	);
+}
+
+// The repairs this tech took and hasn't marked done, in the order to work them: rush first, then
+// the earliest drop-off. A tech is their calendar, as everywhere else a request meets one.
+const QUEUE = `SELECT requests.*, offers.token FROM requests JOIN offers ON offers.token = requests.confirmed_by
+	WHERE requests.status = 'confirmed' AND requests.done IS NULL AND offers.calendar_id = ?
+	ORDER BY requests.rush > 0 DESC, requests.slot_start IS NULL, requests.slot_start, requests.created`;
+
+export async function queue(env: Env, token: string): Promise<Response> {
+	const offer = await env.DB.prepare("SELECT * FROM offers WHERE token = ?").bind(token).first<OfferRow>();
+	if (!offer) return html("Queue not found", "<h1>Queue not found</h1><p>This link doesn't match a request.</p>", 404);
+	const { results } = await env.DB.prepare(QUEUE).bind(offer.calendar_id).all<RequestRow & { token: string }>();
+
+	const items = results.map((request) => {
+		const intake: StoredIntake = JSON.parse(request.intake);
+		const time = timeOf(env, request);
+		// The device too, when the title is the service.
+		const details = [time && `Drop-off ${time}`, intake.service && intake.device, intake.name].filter((detail) => detail) as string[];
+		const call = intake.phone ? ` · <a href="tel:${escape(dialable(intake.phone))}">${escape(intake.phone)}</a>` : "";
+		return `<li><a class="what" href="/offers/${request.token}">${request.rush ? "RUSH " : ""}${escape(what(intake))}</a><br>
+<span class="details">${details.map(escape).join(" · ")}${call}</span></li>`;
+	});
+	const count = `${results.length} repair${results.length === 1 ? "" : "s"}`;
+	return html(
+		"Your queue",
+		`<h1>Your queue</h1>
+${
+	items.length > 0
+		? `<p class="state">${count} you took and haven't marked done: rush first, then by drop-off time. Fewer "Available" blocks on your calendar means fewer new ones.</p>
+<ol class="queue">
+${items.join("\n")}
+</ol>`
+		: `<p class="state">Nothing in your queue. Repairs you take show up here until you mark them done.</p>`
+}`,
 	);
 }

@@ -681,6 +681,7 @@ test("two techs pressing take at once: exactly one gets it", async () => {
 test("a rush is marked everywhere the techs look, and priced for the customer", async () => {
 	both();
 	await submit({ slot: iso(slotStart), rush: "1" });
+	assert.equal((db.sqlite.prepare("SELECT rush FROM requests").get() as any).rush, 20);
 	assert.equal(holds[0].body.summary, "Request: RUSH PS5 deep cleaning (Jane)");
 	assert.match(holds[0].body.description, /Rush: yes, \+\$20/);
 	assert.match(to("sam@example.com")[0].subject, /^Repair request: RUSH PS5 deep cleaning from Jane, /);
@@ -882,4 +883,104 @@ test("fails when no calendar can be read", async () => {
 	const response = await slotsFrom("https://repairs.perocho.com", { TECHS: JSON.stringify([{ name: "Typo", calendarId: "nobody@example.com" }]) });
 	console.error = original;
 	assert.equal(response.status, 500);
+});
+
+// The queue.
+
+test("the queue migration keeps a rush filed before it ran", () => {
+	const sqlite = new DatabaseSync(":memory:");
+	const migrations = `${import.meta.dirname}/../migrations`;
+	const files = readdirSync(migrations).sort();
+	for (const file of files.slice(0, 2)) sqlite.exec(readFileSync(`${migrations}/${file}`, "utf8"));
+	const insert = sqlite.prepare("INSERT INTO requests (id, created, intake, status) VALUES (?, 0, ?, 'confirmed')");
+	insert.run("rushed", JSON.stringify({ name: "Jane", rush: 20 }));
+	insert.run("plain", JSON.stringify({ name: "Bob", rush: 0 }));
+	insert.run("old", JSON.stringify({ name: "Ann" }));
+	for (const file of files.slice(2)) sqlite.exec(readFileSync(`${migrations}/${file}`, "utf8"));
+	const rows = sqlite.prepare("SELECT id, rush, done FROM requests ORDER BY id").all();
+	assert.deepEqual(rows.map((row: any) => [row.id, row.rush, row.done]), [["old", 0, null], ["plain", 0, null], ["rushed", 20, null]]);
+});
+
+const queueOf = (link: string) => worker.fetch(new Request(`${link}/queue`), env);
+// Files a request for Sam alone at `slot` and has him take it; returns his link to it.
+const taken = async (fields: Record<string, string>) => {
+	mails = [];
+	await submit(fields);
+	const link = linkFor("sam@example.com");
+	await press(link, "confirm");
+	return link;
+};
+
+test("the queue lists a tech's repairs, rush first, then by drop-off", async () => {
+	const later = await taken({ slot: iso(slotStart + 2 * quarter), name: "Later" });
+	await taken({ slot: iso(slotStart), name: "Early", phone: "416-555-0199" });
+	await taken({ slot: iso(slotStart + 3 * quarter), name: "Rushed", rush: "1" });
+
+	const response = await queueOf(later);
+	assert.equal(response.status, 200);
+	const body = await response.text();
+	assert.deepEqual([...body.matchAll(/PS5 disc · (\w+)/g)].map((match) => match[1]), ["Rushed", "Early", "Later"]);
+	assert.match(body, /3 repairs/);
+	assert.match(body, /<a class="what" href="\/offers\/[0-9a-f-]+">RUSH PS5 deep cleaning<\/a>/);
+	assert.match(body, /<a href="tel:4165550199">416-555-0199<\/a>/);
+	assert.match(body, /Drop-off \w{3}, /);
+	assert.match(await (await offerPage(later)).text(), new RegExp(`<a href="${new URL(later).pathname}/queue">Your queue</a>`));
+});
+
+test("the queue only has the tech's own repairs, and none still open", async () => {
+	both();
+	await submit({ slot: iso(slotStart) }); // open: in nobody's queue
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	assert.match(await (await queueOf(sam)).text(), /Nothing in your queue/);
+	await press(richard, "confirm");
+	assert.match(await (await queueOf(sam)).text(), /Nothing in your queue/);
+	assert.match(await (await queueOf(richard)).text(), /1 repair /);
+});
+
+test("escapes what the customer wrote in the queue", async () => {
+	const link = await taken({ name: "<b>Jane</b>", device: "<i>PS5</i>" });
+	const body = await (await queueOf(link)).text();
+	assert.ok(!body.includes("<b>Jane") && !body.includes("<i>PS5"));
+	assert.match(body, /&lt;b&gt;Jane/);
+});
+
+test("only the tech who took it can mark it done, and then it leaves the queue", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	await press(richard, "done"); // still open: nothing to finish
+	assert.equal((db.sqlite.prepare("SELECT done FROM requests").get() as any).done, null);
+	await press(sam, "confirm");
+	assert.match(await (await offerPage(sam)).text(), /value="done">Mark done/);
+	assert.doesNotMatch(await (await offerPage(richard)).text(), /value="done"/);
+
+	await press(richard, "done");
+	assert.equal((db.sqlite.prepare("SELECT done FROM requests").get() as any).done, null);
+	mails = [];
+	await press(sam, "done");
+	assert.ok((db.sqlite.prepare("SELECT done FROM requests").get() as any).done > 0);
+	assert.equal(status(), "confirmed");
+	assert.equal(mails.length, 0);
+
+	const page = await (await offerPage(sam)).text();
+	assert.match(page, /You finished this repair/);
+	assert.ok(!page.includes("<form"));
+	assert.match(await (await queueOf(sam)).text(), /Nothing in your queue/);
+	assert.match(await (await offerPage(richard)).text(), /Sam took this request/);
+});
+
+test("the hourly job leaves a finished repair and its booking alone", async () => {
+	const sam = await taken({});
+	await press(sam, "done");
+	db.sqlite.prepare("UPDATE requests SET slot_start = ?, slot_end = ?").run(Date.now() - hour, Date.now());
+	deleted = [];
+	mails = [];
+	await tick();
+	assert.equal(status(), "confirmed");
+	assert.equal(deleted.length + mails.length, 0);
+});
+
+test("answers an unknown queue link with 404", async () => {
+	const response = await queueOf("https://intake.test/offers/00000000-0000-4000-8000-000000000000");
+	assert.equal(response.status, 404);
 });

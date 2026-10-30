@@ -23,7 +23,8 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   away from anyone else: their events on your calendar are set to "Free".
 - **Your other events still block times inside a block.** All-day events, events set to "Free"
   and invites you declined don't.
-- **To take on less, offer fewer drop-off times:** trim your "Available" blocks.
+- **To take on less, offer fewer drop-off times:** trim your "Available" blocks. Every repair
+  you take joins your queue, so check it before adding more.
 - **Every request is emailed to every tech**, each with their own link, and a copy without
   links goes to `repairs@perocho.com`. If you're free at the picked time it's also on your
   calendar as a yellow, tentative `Request: ...` event, with the details and your link in its
@@ -44,6 +45,11 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
     hour it expires: any holds are deleted and the customer is told nobody could take it.
     Requests sent before a time was required have none; those expire after 7 days.
 - **To cancel or move a booking**, change or delete the event and email the customer yourself.
+- **Your queue** is the "Your queue" link at the bottom of any of your request pages: every
+  repair you've taken and not marked done, rush first, then by drop-off time, each with the
+  customer's number and a link to its page. Press **Mark done** on a repair's page once it's
+  back with the customer and it leaves the queue (nothing is emailed, and the calendar event
+  stays). Only the tech who took it can.
 - **A rush** says `RUSH` in the email subjects, the calendar event's title and on the offer
   page. The customer was told it's +$20, paid in person with the repair; nothing is charged
   online.

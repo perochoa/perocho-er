@@ -5,13 +5,14 @@
 //                        site (the form works without JS)
 //   GET  /offers/<token> one tech's link to a request: shows it, with buttons to take or decline it
 //   POST /offers/<token> those buttons
+//   GET  /offers/<token>/queue  that tech's queue: the repairs they took and haven't marked done
 // and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time.
 
 import { sendMail } from "./fastmail.ts";
 import { accessToken, createEvent, deleteEvent, listEvents } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
-import { act, expire, page } from "./offers.ts";
+import { act, expire, page, queue } from "./offers.ts";
 import { openSlots, type Slot } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
@@ -175,8 +176,8 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 	const id = crypto.randomUUID();
 	const db = env.DB;
 	const rows = [
-		db.prepare("INSERT INTO requests (id, created, intake, slot_start, slot_end) VALUES (?, ?, ?, ?, ?)")
-			.bind(id, Date.now(), JSON.stringify(intake), slot.start, slot.end),
+		db.prepare("INSERT INTO requests (id, created, intake, slot_start, slot_end, rush) VALUES (?, ?, ?, ?, ?, ?)")
+			.bind(id, Date.now(), JSON.stringify(intake), slot.start, slot.end, intake.rush),
 		...offers.map((offer, position) =>
 			db.prepare(
 				"INSERT INTO offers (token, request_id, position, name, email, calendar_id, hold_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -218,6 +219,7 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 }
 
 const OFFER = /^\/offers\/([0-9a-f-]{36})$/;
+const QUEUE = /^\/offers\/([0-9a-f-]{36})\/queue$/;
 
 export default {
 	async fetch(req: Request, env: Env): Promise<Response> {
@@ -233,6 +235,8 @@ export default {
 			}
 			const offer = pathname.match(OFFER);
 			if (offer && req.method === "GET") return await page(env, offer[1]);
+			const mine = pathname.match(QUEUE);
+			if (mine && req.method === "GET") return await queue(env, mine[1]);
 			if (offer && req.method === "POST") {
 				// A body that isn't a form is a press of no button.
 				const form = await req.formData().catch(() => null);
