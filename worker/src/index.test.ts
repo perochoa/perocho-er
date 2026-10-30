@@ -519,6 +519,18 @@ test("shows a tech the request without changing anything", async () => {
 	assert.equal(patched.length + deleted.length, 0);
 });
 
+test("locks the tech's pages down to their own styles and forms", async () => {
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+	const unknown = "https://intake.test/offers/00000000-0000-4000-8000-000000000000";
+	for (const link of [sam, `${sam}/queue`, unknown]) {
+		assert.equal(
+			(await offerPage(link)).headers.get("Content-Security-Policy"),
+			"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+		);
+	}
+});
+
 test("escapes what the customer wrote on the page", async () => {
 	await submit({ problem: "<script>alert(1)</script>" });
 	const body = await (await offerPage(linkFor("sam@example.com"))).text();
