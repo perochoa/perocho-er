@@ -1,7 +1,7 @@
 // The services collection, sorted as the page lists them, and their price lines.
 import { type CollectionEntry, getCollection } from "astro:content";
 
-type Service = CollectionEntry<"services">;
+export type Service = CollectionEntry<"services">;
 
 export const getServices = async () =>
 	(await getCollection("services")).sort((a, b) => a.data.order - b.data.order);

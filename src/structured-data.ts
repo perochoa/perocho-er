@@ -1,13 +1,13 @@
 // The home page's JSON-LD (schema.org), for search engines and AI assistants: the business, its
-// services and prices, and the site. Built from the same details the page shows.
+// services and prices, and the site. Built from the same details the page shows, and the same
+// services list the page renders.
 import { marketplace } from "./reviews";
-import { basePrice, getServices, priceText } from "./services";
+import { basePrice, priceText, type Service } from "./services";
 import { site } from "./site";
 
-export async function homeStructuredData(origin: URL) {
+export function homeStructuredData(origin: URL, services: Service[]) {
 	const url = new URL("/", origin).href;
 	const business = `${url}#business`;
-	const services = await getServices();
 	return {
 		"@context": "https://schema.org",
 		"@graph": [
