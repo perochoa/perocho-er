@@ -11,7 +11,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { sendMail } from "../src/fastmail.ts";
-import { accessToken, listEvents } from "../src/google.ts";
+import { accessRole, accessToken, listEvents } from "../src/google.ts";
 import { EMAIL } from "../src/intake.ts";
 import { openSlots } from "../src/slots.ts";
 import { parseTechs, type Tech } from "../src/techs.ts";
@@ -73,22 +73,19 @@ function checkList(techs: Tech[]) {
 // The worker reads events and writes holds, so the service account needs "Make changes to events".
 async function checkCalendar(token: string, tech: Tech, now: number) {
 	console.log(`${tech.name} (calendar ${tech.calendarId}, requests to ${tech.email})`);
-	const query = new URLSearchParams({ maxResults: "1", fields: "accessRole" });
-	const response = await fetch(
-		`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(tech.calendarId)}/events?${query}`,
-		{ headers: { Authorization: `Bearer ${token}` } },
-	);
-	if (response.status === 404) {
+	let role: string | null;
+	try {
+		role = await accessRole(token, tech.calendarId);
+	} catch (error) {
+		fail(`can't read the calendar: ${(error as Error).message}`);
+		return;
+	}
+	if (role === null) {
 		fail("calendar not found: the ID is wrong, or it isn't shared with the service account");
 		return;
 	}
-	if (!response.ok) {
-		fail(`can't read the calendar: ${response.status} ${await response.text()}`);
-		return;
-	}
-	const { accessRole } = (await response.json()) as { accessRole?: string };
-	if (accessRole === "writer" || accessRole === "owner") ok(`shared with "Make changes to events" (${accessRole})`);
-	else fail(`shared as "${accessRole}"; it needs "Make changes to events" to hold times`);
+	if (role === "writer" || role === "owner") ok(`shared with "Make changes to events" (${role})`);
+	else fail(`shared as "${role}"; it needs "Make changes to events" to hold times`);
 
 	const to = now + vars.DAYS_AHEAD * 86_400_000;
 	const events = await listEvents(token, tech.calendarId, now, to);
