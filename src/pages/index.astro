@@ -224,32 +224,24 @@ const steps = site.intakeUrl
 							<a class="button secondary" href={`mailto:${site.email}`}>Email us</a>
 						</div>
 					</div>
-					<div class="details">
-						<h3>For a faster quote, tell us</h3>
-						<ul class="checklist">
-							<li>the device and its model</li>
-							<li>what's wrong with it</li>
-							<li>a photo, if you're messaging us</li>
-						</ul>
-						{
-							(site.serviceArea || site.hours) && (
-								<dl>
-									{site.serviceArea && (
-										<div>
-											<dt>Where</dt>
-											<dd>{site.serviceArea}</dd>
-										</div>
-									)}
-									{site.hours && (
-										<div>
-											<dt>When</dt>
-											<dd>{site.hours}</dd>
-										</div>
-									)}
-								</dl>
-							)
-						}
-					</div>
+					{
+						(site.serviceArea || site.hours) && (
+							<dl class="details">
+								{site.serviceArea && (
+									<div>
+										<dt>Where</dt>
+										<dd>{site.serviceArea}</dd>
+									</div>
+								)}
+								{site.hours && (
+									<div>
+										<dt>When</dt>
+										<dd>{site.hours}</dd>
+									</div>
+								)}
+							</dl>
+						)
+					}
 				</div>
 			</div>
 		</section>
@@ -487,42 +479,14 @@ const steps = site.intakeUrl
 		margin-top: 1.5rem;
 	}
 	.details {
+		display: grid;
+		align-content: start;
+		gap: 0.75rem;
+		margin: 0;
 		padding: 1.5rem;
 		border-radius: 0.75rem;
 		background: var(--surface);
 		border: 1px solid var(--line);
-	}
-	.details h3 {
-		margin: 0 0 0.75rem;
-	}
-	.checklist {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.checklist li {
-		position: relative;
-		padding-left: 1.75rem;
-	}
-	.checklist li + li {
-		margin-top: 0.375rem;
-	}
-	.checklist li::before {
-		content: "";
-		position: absolute;
-		left: 0.25rem;
-		top: 0.45em;
-		width: 0.625rem;
-		height: 0.625rem;
-		border-radius: 50%;
-		background: var(--accent);
-	}
-	dl {
-		display: grid;
-		gap: 0.75rem;
-		margin: 1.25rem 0 0;
-		padding-top: 1.25rem;
-		border-top: 1px solid var(--line);
 	}
 	dt {
 		font-family: var(--font-mono);
