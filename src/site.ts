@@ -36,7 +36,7 @@ export const site: Site = {
 	},
 	serviceArea: "Mississauga, drop-off only. Message us for the address.",
 	// Assumes the request form is on (intakeUrl): its times come from the techs' calendars.
-	hours: "Whenever a tech is free. The request form shows the open times.",
+	hours: "Drop-off whenever a tech can take devices in. The request form shows the open times.",
 	intakeUrl: "https://perocho-intake.perocho-xela.workers.dev",
 	rushFee: 20,
 };
