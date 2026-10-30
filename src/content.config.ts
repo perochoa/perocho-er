@@ -7,10 +7,11 @@ const services = defineCollection({
 	schema: z.object({
 		title: z.string(),
 		order: z.number(),
-		// Free text, not a number: prices carry bundles and per-unit deals ("$70, or $100 with...").
-		// Leave it unset to show "Message us for a quote".
+		// Free text, not a number: prices carry bundles ("$70, or $100 with..."). Leave it and
+		// `perItem` unset to show "Message us for a quote".
 		price: z.string().optional(),
-		// Per-item pricing for the card's price calculator. Keep it in line with `price`.
+		// Per-item pricing for the card's price calculator. Without `price`, the card's price line is
+		// built from it: "$25 per stick, or $20 per stick for 4 or more".
 		perItem: z
 			.object({
 				item: z.string(),

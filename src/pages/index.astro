@@ -13,6 +13,13 @@ const renderedServices = await Promise.all(
 	services.map(async (service) => ({ ...service, Content: (await render(service)).Content })),
 );
 
+// Per-item services build their price line from the calculator's numbers, so the two can't disagree.
+const priceText = ({ price, perItem }: (typeof services)[number]["data"]) =>
+	price ??
+	(perItem
+		? `$${perItem.price} per ${perItem.item}, or $${perItem.bulkPrice} per ${perItem.item} for ${perItem.bulkFrom} or more`
+		: "Message us for a quote");
+
 const repairs = (await getCollection("repairs")).sort(
 	(a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
 );
@@ -159,7 +166,7 @@ const steps = site.intakeUrl
 										</p>
 									</div>
 								)}
-								<p class="price">{data.price ?? "Message us for a quote"}</p>
+								<p class="price">{priceText(data)}</p>
 								{site.intakeUrl && (
 									<a class="ask" href={`/request/?service=${id}`}>
 										Request this repair <span aria-hidden="true">→</span>
