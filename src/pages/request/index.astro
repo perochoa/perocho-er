@@ -26,10 +26,9 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		{
 			site.intakeUrl ? (
 				<form method="post" action={`${site.intakeUrl}/request`} data-slots={`${site.intakeUrl}/slots`}>
-					<p class="hint">Every field is required unless it says optional.</p>
-
-					<!-- Without a time the worker turns the request down, so without JS (no time list) or
-					     without open times, point people to the other ways in. -->
+					<!-- Without a time the worker turns the request down, so the fields only show once there
+					     are times to pick. Without JS (no time list) or without open times, point people to
+					     the other ways in instead. -->
 					<noscript>
 						<p class="notice">
 							Picking a drop-off time needs JavaScript. <a href={site.messengerUrl}>Message us on Messenger</a> or
@@ -38,95 +37,96 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 					</noscript>
 					<p class="notice" data-no-slots tabindex="-1" hidden>
 						<span data-no-slots-reason></span> <a href={site.messengerUrl}>Message us on Messenger</a> or email{" "}
-						<a href={`mailto:${site.email}`}>{site.email}</a>, and we'll find a time.
+						<a href={`mailto:${site.email}`}>{site.email}</a> to ask about a repair, and we'll find a time.
 					</p>
+					<p class="hint" data-loading hidden>Loading open times…</p>
 
-					<div class="card">
-						<fieldset>
-							<legend>You</legend>
-							<label>
-								Name
-								<input name="name" autocomplete="name" maxlength="100" required />
-							</label>
-							<label>
-								Email
-								<input type="email" name="email" autocomplete="email" maxlength="200" required aria-describedby="email-hint" />
-							</label>
-							<p class="hint" id="email-hint">We'll email you when we get your request, and again when a tech confirms it.</p>
-							<label>
-								Phone
-								<input type="tel" name="phone" autocomplete="tel" inputmode="tel" maxlength="30" required aria-describedby="phone-hint" />
-							</label>
-							<p class="hint" id="phone-hint">With the area code, so a tech can call you about the price.</p>
-						</fieldset>
-					</div>
+					<div class="fields" data-fields hidden>
+						<p class="hint">Every field is required unless it says optional.</p>
 
-					<div class="card">
-						<fieldset>
-							<legend>The repair</legend>
-							<label>
-								Service
-								<select name="service">
-									{services.map((service) => <option>{service.data.title}</option>)}
-									<option value="">Something else, or not sure</option>
-								</select>
-							</label>
-							<label>
-								Device and model
-								<input name="device" maxlength="150" placeholder="e.g. DualSense controller, PS5 Slim" required />
-							</label>
-							<label>
-								What's wrong?
-								<textarea name="problem" rows="4" maxlength="2000" required></textarea>
-							</label>
-							<label class="check">
-								<input type="checkbox" name="rush" value="1" aria-describedby="rush-hint" />
-								Rush it (+${site.rushFee})
-							</label>
-							<p class="hint" id="rush-hint">Rush repairs go to the front of the queue. You pay for it in person, with the repair.</p>
-						</fieldset>
-					</div>
-
-					<div class="card">
-						<fieldset>
-							<legend>Drop-off time</legend>
-							<p class="hint">When you'll bring your device in. Only times when a tech can take it in are shown.</p>
-							<!-- The day has no name: it only narrows the times, and the time's value says the day. -->
-							<div class="slots" data-slot-field hidden>
+						<div class="card">
+							<fieldset>
+								<legend>You</legend>
 								<label>
-									Day
-									<select data-days></select>
+									Name
+									<input name="name" autocomplete="name" maxlength="100" required />
 								</label>
 								<label>
-									Time
-									<select name="slot" data-times aria-describedby="slot-error"></select>
+									Email
+									<input type="email" name="email" autocomplete="email" maxlength="200" required aria-describedby="email-hint" />
 								</label>
-							</div>
-							<div class="status" aria-live="polite">
-								<p class="hint" data-slot-note></p>
-								<p class="error" id="slot-error" data-slot-error></p>
-							</div>
-						</fieldset>
-					</div>
+								<p class="hint" id="email-hint">We'll email you when we get your request, and again when a tech confirms it.</p>
+								<label>
+									Phone
+									<input type="tel" name="phone" autocomplete="tel" inputmode="tel" maxlength="30" required aria-describedby="phone-hint" />
+								</label>
+								<p class="hint" id="phone-hint">With the area code, so a tech can call you about the price.</p>
+							</fieldset>
+						</div>
 
-					<div class="card">
-						<label>
-							<span>Anything else? <span class="optional">(optional)</span></span>
-							<textarea name="notes" rows="3" maxlength="2000" aria-describedby="notes-hint"></textarea>
-						</label>
-						<p class="hint" id="notes-hint">What you've tried, or anything you're bringing with it.</p>
-					</div>
+						<div class="card">
+							<fieldset>
+								<legend>The repair</legend>
+								<label>
+									Service
+									<select name="service">
+										{services.map((service) => <option>{service.data.title}</option>)}
+										<option value="">Something else, or not sure</option>
+									</select>
+								</label>
+								<label>
+									Device and model
+									<input name="device" maxlength="150" placeholder="e.g. DualSense controller, PS5 Slim" required />
+								</label>
+								<label>
+									What's wrong?
+									<textarea name="problem" rows="4" maxlength="2000" required></textarea>
+								</label>
+								<label class="check">
+									<input type="checkbox" name="rush" value="1" aria-describedby="rush-hint" />
+									Rush it (+${site.rushFee})
+								</label>
+								<p class="hint" id="rush-hint">Rush repairs go to the front of the queue. You pay for it in person, with the repair.</p>
+							</fieldset>
+						</div>
 
-					<!-- Hidden from people; bots fill it in. -->
-					<div class="trap" aria-hidden="true">
-						<label>
-							Leave this empty
-							<input name="website" tabindex="-1" autocomplete="off" />
-						</label>
-					</div>
+						<div class="card">
+							<fieldset>
+								<legend>Drop-off time</legend>
+								<p class="hint">When you'll bring your device in. Only times when a tech can take it in are shown.</p>
+								<!-- The day has no name: it only narrows the times, and the time's value says the day. -->
+								<div class="slots">
+									<label>
+										Day
+										<select data-days></select>
+									</label>
+									<label>
+										Time
+										<select name="slot" data-times aria-describedby="slot-error"></select>
+									</label>
+								</div>
+								<p class="error" id="slot-error" data-slot-error aria-live="polite"></p>
+							</fieldset>
+						</div>
 
-					<!-- Shown once there are times to pick. -->
-					<button class="button" type="submit" hidden>Send request</button>
+						<div class="card">
+							<label>
+								<span>Anything else? <span class="optional">(optional)</span></span>
+								<textarea name="notes" rows="3" maxlength="2000" aria-describedby="notes-hint"></textarea>
+							</label>
+							<p class="hint" id="notes-hint">What you've tried, or anything you're bringing with it.</p>
+						</div>
+
+						<!-- Hidden from people; bots fill it in. -->
+						<div class="trap" aria-hidden="true">
+							<label>
+								Leave this empty
+								<input name="website" tabindex="-1" autocomplete="off" />
+							</label>
+						</div>
+
+						<button class="button" type="submit">Send request</button>
+					</div>
 				</form>
 			) : (
 				<p>
@@ -142,23 +142,25 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 
 	if (form) {
 		const send = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-		const field = form.querySelector<HTMLElement>("[data-slot-field]")!;
-		const days = field.querySelector<HTMLSelectElement>("[data-days]")!;
-		const times = field.querySelector<HTMLSelectElement>("[data-times]")!;
-		const note = form.querySelector<HTMLElement>("[data-slot-note]")!;
+		const fields = form.querySelector<HTMLElement>("[data-fields]")!;
+		const days = fields.querySelector<HTMLSelectElement>("[data-days]")!;
+		const times = fields.querySelector<HTMLSelectElement>("[data-times]")!;
+		const loading = form.querySelector<HTMLElement>("[data-loading]")!;
 		const error = form.querySelector<HTMLElement>("[data-slot-error]")!;
 		const noSlots = form.querySelector<HTMLElement>("[data-no-slots]")!;
 		const noSlotsReason = noSlots.querySelector<HTMLElement>("[data-no-slots-reason]")!;
-		note.textContent = "Loading open times…";
+		loading.hidden = false;
 
-		// A request needs a time, so with none to pick there's nothing to send: say so at the top of
-		// the form, before they fill it in, and point them to Messenger and email.
+		// A request needs a time, so with none to pick there's nothing to send: leave out the form and
+		// point them to Messenger and email. If the times run out while they're filling it in, what
+		// they typed stays, hidden, in case times come back.
 		const unavailable = (reason: string) => {
-			field.hidden = true;
-			send.hidden = true;
+			const hadFocus = fields.contains(document.activeElement);
+			loading.hidden = true;
+			fields.hidden = true;
 			noSlots.hidden = false;
 			noSlotsReason.textContent = reason;
-			note.textContent = reason;
+			if (hadFocus) noSlots.focus();
 		};
 
 		// Loose like the worker's check: separators and a leading + are fine, as long as there are 10
@@ -211,17 +213,16 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			if (before !== "" && dayOfBefore === "") error.textContent = "The time you picked isn't open any more. Pick another.";
 
 			if (slots.length === 0) {
-				unavailable("There are no open times online right now.");
+				unavailable("There are no open drop-off times right now.");
 				return;
 			}
 			// The day of their pick, else the day they had open, else the first one with times.
 			days.replaceChildren(...[...byDay.keys()].map((key) => option(key, dayOf(key))));
 			days.value = dayOfBefore || (byDay.has(open) ? open : byDay.keys().next().value!);
 			fill(before);
-			field.hidden = false;
-			send.hidden = false;
+			loading.hidden = true;
+			fields.hidden = false;
 			noSlots.hidden = true;
-			note.textContent = "";
 		};
 
 		// Without a picked time the worker turns the request down, so stop here and take them to the
@@ -233,10 +234,6 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 				return;
 			}
 			event.preventDefault();
-			if (byDay.size === 0) {
-				noSlots.focus();
-				return;
-			}
 			error.textContent = "Pick a drop-off time before you send your request.";
 			times.focus();
 		});
@@ -249,10 +246,10 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const REFRESH_MS = 60_000;
 		let last = "";
 		let fetchedAt = 0;
-		let loading = false;
+		let fetching = false;
 		const load = () => {
-			if (loading) return;
-			loading = true;
+			if (fetching) return;
+			fetching = true;
 			fetchedAt = Date.now();
 			fetch(form.dataset.slots!)
 				.then((response) => (response.ok ? response.text() : Promise.reject(response.status)))
@@ -266,7 +263,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 				.catch(() => {
 					if (last === "") unavailable("We couldn't load the open times.");
 				})
-				.finally(() => (loading = false));
+				.finally(() => (fetching = false));
 		};
 		load();
 		setInterval(() => document.visibilityState === "visible" && load(), REFRESH_MS);
@@ -290,6 +287,9 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	}
 	form {
 		--error: #b42318;
+	}
+	form,
+	.fields {
 		display: grid;
 		gap: 1.25rem;
 	}
@@ -329,9 +329,6 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		display: grid;
 		grid-template-columns: 1fr 1fr;
 		gap: 1rem;
-	}
-	.slots[hidden] {
-		display: none;
 	}
 	.check {
 		display: flex;
@@ -384,14 +381,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	.card > label + .hint {
 		margin-top: 0.375rem;
 	}
-	.status {
-		display: grid;
-		gap: 0.5rem;
-	}
-	.status p:empty {
-		display: none;
-	}
-	.status:not(:has(p:not(:empty))) {
+	.error:empty {
 		display: none;
 	}
 	.error {
@@ -412,7 +402,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		outline-offset: 2px;
 	}
 	.notice[hidden],
-	button[hidden] {
+	.fields[hidden] {
 		display: none;
 	}
 	.trap {
