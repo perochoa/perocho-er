@@ -39,7 +39,10 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 						<span data-no-slots-reason></span> <a href={site.messengerUrl}>Message us on Messenger</a> or email{" "}
 						<a href={`mailto:${site.email}`}>{site.email}</a> to ask about a repair, and we'll find a time.
 					</p>
-					<p class="hint" data-loading hidden>Loading open times…</p>
+					<div class="loading" data-loading hidden>
+						<p class="hint">Loading open times…</p>
+						<div class="skeleton" aria-hidden="true"><span></span><span></span><span></span></div>
+					</div>
 
 					<div class="fields" data-fields hidden>
 						<p class="hint">Every field is required unless it says optional.</p>
@@ -70,7 +73,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 								<label>
 									Service
 									<select name="service">
-										{services.map((service) => <option>{service.data.title}</option>)}
+										{services.map((service) => <option data-id={service.id}>{service.data.title}</option>)}
 										<option value="">Something else, or not sure</option>
 									</select>
 								</label>
@@ -80,13 +83,15 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 								</label>
 								<label>
 									What's wrong?
-									<textarea name="problem" rows="4" maxlength="2000" required></textarea>
+									<textarea name="problem" rows="4" maxlength="2000" required data-count></textarea>
 								</label>
-								<label class="check">
-									<input type="checkbox" name="rush" value="1" aria-describedby="rush-hint" />
-									Rush it (+${site.rushFee})
+								<label class="check rush">
+									<input type="checkbox" name="rush" value="1" aria-labelledby="rush-label" aria-describedby="rush-hint" />
+									<span class="rush-text">
+										<span id="rush-label">Rush it (+${site.rushFee})</span>
+										<span class="hint" id="rush-hint">Rush repairs go to the front of the queue. You pay for it in person, with the repair.</span>
+									</span>
 								</label>
-								<p class="hint" id="rush-hint">Rush repairs go to the front of the queue. You pay for it in person, with the repair.</p>
 							</fieldset>
 						</div>
 
@@ -112,7 +117,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 						<div class="card">
 							<label>
 								<span>Anything else? <span class="optional">(optional)</span></span>
-								<textarea name="notes" rows="3" maxlength="2000" aria-describedby="notes-hint"></textarea>
+								<textarea name="notes" rows="3" maxlength="2000" aria-describedby="notes-hint" data-count></textarea>
 							</label>
 							<p class="hint" id="notes-hint">What you've tried, or anything you're bringing with it.</p>
 						</div>
@@ -125,7 +130,10 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 							</label>
 						</div>
 
-						<button class="button" type="submit">Send request</button>
+						<button class="button" type="submit">
+							<span class="spinner" aria-hidden="true"></span>
+							<span data-send-label>Send request</span>
+						</button>
 					</div>
 				</form>
 			) : (
@@ -142,6 +150,7 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 
 	if (form) {
 		const send = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+		const sendLabel = send.querySelector<HTMLElement>("[data-send-label]")!;
 		const fields = form.querySelector<HTMLElement>("[data-fields]")!;
 		const days = fields.querySelector<HTMLSelectElement>("[data-days]")!;
 		const times = fields.querySelector<HTMLSelectElement>("[data-times]")!;
@@ -186,7 +195,32 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			if (times.value !== keep) times.value = "";
 		};
 
-		days.addEventListener("change", () => fill(""));
+		// "Request this repair" on a service card links here with ?service=<id>.
+		const wanted = new URLSearchParams(location.search).get("service");
+		const service = form.querySelector<HTMLSelectElement>("[name=service]")!;
+		const match = [...service.options].find((option) => option.dataset.id === wanted);
+		if (match) match.selected = true;
+
+		// A live count under long text fields, shown once they're near the limit.
+		form.querySelectorAll<HTMLTextAreaElement>("textarea[data-count]").forEach((area) => {
+			const counter = Object.assign(document.createElement("p"), { className: "counter" });
+			counter.setAttribute("aria-live", "polite");
+			area.after(counter);
+			const update = () => {
+				const left = area.maxLength - area.value.length;
+				counter.textContent = left <= 300 ? `${left} characters left` : "";
+			};
+			area.addEventListener("input", update);
+			update();
+		});
+
+		days.addEventListener("change", () => {
+			fill("");
+			// A small nudge toward the next step.
+			times.classList.remove("nudge");
+			void times.offsetWidth;
+			times.classList.add("nudge");
+		});
 		times.addEventListener("change", () => (error.textContent = ""));
 
 		// Builds the picker from a /slots response. Called again whenever the times change, so it keeps
@@ -231,6 +265,8 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			if (times.value) {
 				// One request per press; the worker would only file a second one as the same request.
 				send.disabled = true;
+				send.classList.add("is-sending");
+				sendLabel.textContent = "Sending…";
 				return;
 			}
 			event.preventDefault();
@@ -238,7 +274,11 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 			times.focus();
 		});
 		// The back button brings the page back as it was left, so turn the button on again then.
-		window.addEventListener("pageshow", () => (send.disabled = false));
+		window.addEventListener("pageshow", () => {
+			send.disabled = false;
+			send.classList.remove("is-sending");
+			sendLabel.textContent = "Send request";
+		});
 
 		// Techs change their calendars while people fill in the form, so fetch again every so often
 		// while the page is in view, and as soon as they come back to it. The picker is only rebuilt
@@ -402,8 +442,144 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		outline-offset: 2px;
 	}
 	.notice[hidden],
-	.fields[hidden] {
+	.fields[hidden],
+	.loading[hidden] {
 		display: none;
+	}
+	.loading {
+		display: grid;
+		gap: 0.75rem;
+	}
+	.skeleton {
+		display: grid;
+		gap: 1.25rem;
+	}
+	.skeleton span {
+		height: 8rem;
+		border-radius: 0.75rem;
+		background: linear-gradient(
+				100deg,
+				transparent 30%,
+				color-mix(in srgb, var(--accent) 8%, transparent) 50%,
+				transparent 70%
+			)
+			var(--surface);
+		background-size: 200% 100%;
+		border: 1px solid var(--line);
+	}
+	/* Cards and notices come in softly when the times load. */
+	@media (prefers-reduced-motion: no-preference) {
+		.skeleton span {
+			animation: shimmer 1.4s linear infinite;
+		}
+		.fields:not([hidden]) > *,
+		.notice:not([hidden]) {
+			animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+		}
+		.fields > :nth-child(2) {
+			animation-delay: 0.06s;
+		}
+		.fields > :nth-child(3) {
+			animation-delay: 0.12s;
+		}
+		.fields > :nth-child(4) {
+			animation-delay: 0.18s;
+		}
+		.fields > :nth-child(n + 5) {
+			animation-delay: 0.24s;
+		}
+		:global(.nudge) {
+			animation: nudge 0.5s ease-out;
+		}
+	}
+	@keyframes shimmer {
+		from {
+			background-position: 150% 0;
+		}
+		to {
+			background-position: -50% 0;
+		}
+	}
+	@keyframes rise {
+		from {
+			opacity: 0;
+			transform: translateY(0.75rem);
+		}
+	}
+	@keyframes nudge {
+		30% {
+			border-color: var(--accent);
+			box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+		}
+	}
+	/* Rush is a choice card: the whole box is the target and lights up when picked. */
+	.rush {
+		align-items: flex-start;
+		padding: 0.875rem 1rem;
+		border: 1px solid var(--line);
+		border-radius: 0.625rem;
+		transition:
+			border-color 0.15s,
+			background-color 0.15s;
+	}
+	.rush:hover {
+		border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+	}
+	.rush:has(input:checked) {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 8%, transparent);
+	}
+	.rush input {
+		margin-top: 0.125rem;
+	}
+	.rush-text {
+		display: grid;
+		gap: 0.25rem;
+	}
+	.check .hint {
+		margin: 0;
+	}
+	:global(.counter) {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.8125rem;
+		text-align: right;
+	}
+	:global(.counter:empty) {
+		display: none;
+	}
+	/* Fields left wrong after editing get a red edge; untouched ones stay plain. */
+	input:user-invalid,
+	textarea:user-invalid {
+		border-color: var(--error);
+	}
+	.card {
+		transition: border-color 0.2s;
+	}
+	.card:focus-within {
+		border-color: color-mix(in srgb, var(--accent) 45%, var(--line));
+	}
+	.spinner {
+		display: none;
+		width: 1em;
+		height: 1em;
+		margin-right: 0.5rem;
+		border: 2px solid currentColor;
+		border-right-color: transparent;
+		border-radius: 50%;
+		animation: spin 0.7s linear infinite;
+	}
+	.is-sending .spinner {
+		display: inline-block;
+	}
+	button:disabled {
+		cursor: progress;
+		opacity: 0.85;
+	}
+	@keyframes spin {
+		to {
+			transform: rotate(360deg);
+		}
 	}
 	.trap {
 		position: absolute;
