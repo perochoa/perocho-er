@@ -542,20 +542,26 @@ const steps = site.intakeUrl
 		color: var(--ink);
 		font-weight: 600;
 		font-size: 0.875rem;
+		transition:
+			border-color 0.2s,
+			background-color 0.2s,
+			translate 0.2s;
 	}
 	.badge :global(svg) {
 		width: 1.5rem;
 		height: 1.5rem;
 		flex: none;
 	}
-	@media (prefers-reduced-motion: no-preference) {
-		.rating:hover .badge :global(svg) {
-			animation: spin-in 0.6s cubic-bezier(0.3, 1.4, 0.5, 1);
-		}
+	/* A quiet hover: the badge firms up in the accent. */
+	.rating:hover .badge,
+	.rating:focus-visible .badge {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 14%, var(--surface));
 	}
-	@keyframes spin-in {
-		from {
-			transform: rotate(-60deg) scale(0.8);
+	@media (prefers-reduced-motion: no-preference) {
+		.rating:hover .badge,
+		.rating:focus-visible .badge {
+			translate: 0 -1px;
 		}
 	}
 
@@ -755,17 +761,6 @@ const steps = site.intakeUrl
 		color: var(--accent);
 		font-size: 0.8125rem;
 		font-weight: 600;
-	}
-	@media (prefers-reduced-motion: no-preference) {
-		.rating:hover .stars {
-			animation: twinkle 0.6s ease-out;
-		}
-	}
-	@keyframes twinkle {
-		40% {
-			letter-spacing: 0.25em;
-			filter: drop-shadow(0 0 4px var(--accent));
-		}
 	}
 
 	/* Facts strip */
