@@ -70,11 +70,15 @@ const links = [
 	if (sections.size) {
 		const visible = new Set<Element>();
 		const order = [...sections.keys()];
+		let marked: Element | undefined;
 		const mark = () => {
 			// The first section (in page order) that is in the band near the top of the screen. At the
 			// bottom of the page the last section can be too short to reach that band, so it wins there.
 			const atBottom = innerHeight + scrollY >= document.documentElement.scrollHeight - 2;
 			const current = atBottom ? order.at(-1) : order.find((section) => visible.has(section));
+			// Scroll fires often; only touch the links when the section changes.
+			if (current === marked) return;
+			marked = current;
 			for (const [section, sectionLinks] of sections) {
 				for (const link of sectionLinks) {
 					if (section === current) link.setAttribute("aria-current", "location");
