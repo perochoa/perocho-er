@@ -36,7 +36,7 @@
 		"SLOT_MINUTES": 15,
 		"LEAD_HOURS": 2,
 		"DAYS_AHEAD": 31,
-		// Dollars added for a rush (front of the queue), paid in person. Keep rushFee in src/site.ts the same.
+		// Dollars added for a rush (front of the queue), paid in person. Keep rushFee in src/site.ts the same: src/config.test.ts fails if they differ.
 		"RUSH_FEE": 20,
 		// Comma-separated origins also allowed to read /slots, besides SITE_URL. Leave empty here;
 		// set it in .dev.vars for local work, e.g. DEV_ORIGINS=http://localhost:4321
