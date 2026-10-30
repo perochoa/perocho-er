@@ -1,0 +1,168 @@
+---
+// Request form: the drop-off time, picked from a day and that day's open times. It loads the times,
+// keeps them fresh, and won't let the form be sent without one. It tells its form how loading went
+// with two events, so the form can show its fields or point people elsewhere:
+// - "slots-open": there are times to pick.
+// - "slots-unavailable": there are none, or they couldn't be loaded; detail is the reason to show.
+interface Props {
+	// The worker's /slots endpoint.
+	url: string;
+}
+
+const { url } = Astro.props;
+---
+
+<div class="card" data-slot-picker data-url={url}>
+	<fieldset>
+		<legend>Drop-off time</legend>
+		<p class="hint">When you'll bring your device in. Only times when a tech can take it in are shown.</p>
+		<!-- The day has no name: it only narrows the times, and the time's value says the day. -->
+		<div class="slots">
+			<label>
+				Day
+				<select data-days></select>
+			</label>
+			<label>
+				Time
+				<select name="slot" data-times aria-describedby="slot-error"></select>
+			</label>
+		</div>
+		<p class="error" id="slot-error" data-slot-error aria-live="polite"></p>
+	</fieldset>
+</div>
+
+<script>
+	const picker = document.querySelector<HTMLElement>("[data-slot-picker]");
+	const form = picker?.closest("form");
+
+	if (picker && form) {
+		const days = picker.querySelector<HTMLSelectElement>("[data-days]")!;
+		const times = picker.querySelector<HTMLSelectElement>("[data-times]")!;
+		const error = picker.querySelector<HTMLElement>("[data-slot-error]")!;
+
+		const unavailable = (reason: string) => form.dispatchEvent(new CustomEvent("slots-unavailable", { detail: reason }));
+
+		// Dates are plain calendar days: noon UTC, so formatting never shifts them.
+		const day = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric" });
+		const dayOf = (date: string) => day.format(new Date(`${date}T12:00:00Z`));
+
+		// Each day's times, by date; the time list only shows the picked day's.
+		let byDay = new Map<string, { value: string; label: string }[]>();
+
+		const option = (value: string, label: string) => Object.assign(document.createElement("option"), { value, textContent: label });
+		const fill = (keep: string) => {
+			times.replaceChildren(option("", "Pick a time"), ...(byDay.get(days.value) ?? []).map(({ value, label }) => option(value, label)));
+			times.value = keep;
+			if (times.value !== keep) times.value = "";
+		};
+
+		days.addEventListener("change", () => {
+			fill("");
+			// A small nudge toward the next step.
+			times.classList.remove("nudge");
+			void times.offsetWidth;
+			times.classList.add("nudge");
+		});
+		times.addEventListener("change", () => (error.textContent = ""));
+
+		// Builds the picker from a /slots response. Called again whenever the times change, so it keeps
+		// their pick and the day they had open.
+		const show = ({ timeZone, slots }: { timeZone: string; slots: { start: string }[] }) => {
+			const before = times.value;
+			const open = days.value;
+
+			// Each slot's calendar date in the worker's zone, so the days match the times it offers and
+			// holds.
+			const date = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+			const time = new Intl.DateTimeFormat("en-CA", { timeZone, hour: "numeric", minute: "2-digit" });
+
+			byDay = new Map();
+			let dayOfBefore = "";
+			for (const slot of slots) {
+				const start = new Date(slot.start);
+				const key = date.format(start);
+				if (!byDay.has(key)) byDay.set(key, []);
+				byDay.get(key)!.push({ value: slot.start, label: time.format(start) });
+				if (slot.start === before) dayOfBefore = key;
+			}
+
+			if (before !== "" && dayOfBefore === "") error.textContent = "The time you picked isn't open any more. Pick another.";
+
+			if (slots.length === 0) {
+				unavailable("There are no open drop-off times right now.");
+				return;
+			}
+			// The day of their pick, else the day they had open, else the first one with times.
+			days.replaceChildren(...[...byDay.keys()].map((key) => option(key, dayOf(key))));
+			days.value = dayOfBefore || (byDay.has(open) ? open : byDay.keys().next().value!);
+			fill(before);
+			form.dispatchEvent(new CustomEvent("slots-open"));
+		};
+
+		// Without a picked time the worker turns the request down, so stop here and take them to the
+		// picker. The browser has already checked the other fields by now. Capture, so this runs before
+		// the form's own submit handlers, which leave a stopped submit alone.
+		form.addEventListener(
+			"submit",
+			(event) => {
+				if (times.value) return;
+				event.preventDefault();
+				error.textContent = "Pick a drop-off time before you send your request.";
+				times.focus();
+			},
+			{ capture: true },
+		);
+
+		// Techs change their calendars while people fill in the form, so fetch again every so often
+		// while the page is in view, and as soon as they come back to it. The picker is only rebuilt
+		// when the times differ, so a refresh doesn't disturb someone using it.
+		const REFRESH_MS = 60_000;
+		let last = "";
+		let fetchedAt = 0;
+		let fetching = false;
+		const load = () => {
+			if (fetching) return;
+			fetching = true;
+			fetchedAt = Date.now();
+			fetch(picker.dataset.url!)
+				.then((response) => (response.ok ? response.text() : Promise.reject(response.status)))
+				.then((body) => {
+					if (body === last) return;
+					last = body;
+					show(JSON.parse(body));
+				})
+				// Keep whatever is showing, and the next refresh tries again. With nothing showing yet,
+				// say so instead of leaving them waiting.
+				.catch(() => {
+					if (last === "") unavailable("We couldn't load the open times.");
+				})
+				.finally(() => (fetching = false));
+		};
+		// The first load waits for the page's other scripts, so the form is listening for its result.
+		addEventListener("DOMContentLoaded", load, { once: true });
+		setInterval(() => document.visibilityState === "visible" && load(), REFRESH_MS);
+		document.addEventListener("visibilitychange", () => {
+			if (document.visibilityState === "visible" && Date.now() - fetchedAt > REFRESH_MS / 4) load();
+		});
+	}
+</script>
+
+<style>
+	.slots {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 1rem;
+	}
+	/* A small nudge toward the time list once a day is picked. */
+	@media (prefers-reduced-motion: no-preference) {
+		.nudge {
+			animation: nudge 0.5s ease-out;
+		}
+	}
+	@keyframes nudge {
+		30% {
+			border-color: var(--accent);
+			box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+		}
+	}
+</style>
