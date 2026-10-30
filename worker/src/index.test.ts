@@ -10,6 +10,7 @@ import worker from "./index.ts";
 
 const { privateKey } = generateKeyPairSync("rsa", { modulusLength: 2048 });
 const hour = 3_600_000;
+const quarter = hour / 4;
 const slotStart = Math.ceil((Date.now() + 24 * hour) / hour) * hour;
 
 const env = {
@@ -17,9 +18,10 @@ const env = {
 	MAIL_FROM: "repairs@perocho.com",
 	MAIL_TO: "repairs@perocho.com",
 	TIME_ZONE: "America/Toronto",
-	SLOT_MINUTES: 60,
+	SLOT_MINUTES: 15,
 	LEAD_HOURS: 2,
 	DAYS_AHEAD: 31,
+	RUSH_FEE: 20,
 	DEV_ORIGINS: "",
 	TECHS: JSON.stringify([
 		{ name: "Richard", calendarId: "richard@example.com" },
@@ -88,9 +90,6 @@ let mails: any[];
 let submissions: any[];
 let tokenRequests: number;
 let tokenLifetime: number; // seconds, as Google's expires_in
-// Another request's hold that lands on the same calendar right after ours is written, unseen by
-// our first look at the calendar: the race the re-check is for.
-let rival: ((ours: { id: string; created: string }) => object) | null;
 let fetches: string[];
 let limitKeys: string[];
 let allowed: number;
@@ -120,7 +119,6 @@ beforeEach(() => {
 	tokenRequests = 0;
 	tokenLifetime = 3600;
 	resetTokenCache();
-	rival = null;
 	fetches = [];
 	limitKeys = [];
 	allowed = Infinity;
@@ -156,10 +154,9 @@ beforeEach(() => {
 			if (!calendars[calendarId]) return new Response("Not Found", { status: 404 });
 			if (init?.method === "POST") {
 				holds.push({ calendarId, body });
-				const ours = { id: `hold${holds.length}`, created: new Date().toISOString() };
-				calendars[calendarId].push({ ...body, ...ours });
-				if (rival) calendars[calendarId].push(rival(ours));
-				return Response.json(ours);
+				const id = `hold${holds.length}`;
+				calendars[calendarId].push({ ...body, id });
+				return Response.json({ id });
 			}
 			return Response.json({ items: calendars[calendarId] });
 		}
@@ -214,6 +211,7 @@ test("lists only times when some tech is free", async () => {
 	assert.equal(timeZone, env.TIME_ZONE);
 	const starts = slots.map((s) => s.start);
 	assert.ok(starts.includes(iso(slotStart)));
+	assert.ok(starts.includes(iso(slotStart + 3 * quarter)));
 	assert.ok(!starts.includes(iso(slotStart + hour)));
 	assert.equal(response.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
 	assert.equal(response.headers.get("Cache-Control"), "no-cache");
@@ -261,6 +259,7 @@ for (const [label, TECHS] of [
 	});
 }
 
+const getSlots = () => worker.fetch(new Request("https://intake.test/slots"), env);
 const to = (address: string) => mails.filter((mail) => mail.to[0].email === address);
 const text = (mail: any) => mail.bodyValues.body.value as string;
 const linkFor = (address: string) => text(to(address)[0]).match(/https:\/\/intake\.test\/offers\/[0-9a-f-]+/)![0];
@@ -273,6 +272,8 @@ test("holds the picked time on the free tech's calendar and offers it to every t
 	assert.equal(holds.length, 1);
 	assert.equal(holds[0].calendarId, "sam@example.com");
 	assert.equal(holds[0].body.status, "tentative");
+	assert.equal(holds[0].body.transparency, "transparent");
+	assert.equal(holds[0].body.end.dateTime, iso(slotStart + quarter));
 	assert.equal(holds[0].body.summary, "Request: PS5 deep cleaning (Jane)");
 	assert.ok(holds[0].body.description.includes(linkFor("sam@example.com")));
 
@@ -316,52 +317,28 @@ test("emails a tech at their email when TECHS gives one", async () => {
 	assert.equal(to("sam@example.com").length, 0);
 });
 
-test("sends people back when the time was just taken", async () => {
+test("sends people back when the time isn't open any more", async () => {
 	calendars["sam@example.com"].push({
-		summary: "Request: TMR sticks (Alex)",
+		summary: "Lunch",
 		start: { dateTime: iso(slotStart) },
 		end: { dateTime: iso(slotStart + hour) },
 	});
 	const response = await submit({ slot: iso(slotStart) });
-	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/taken/");
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/closed/");
 	assert.equal(holds.length + mails.length, 0);
 });
 
-const racingHold = (id: string, created: number) => ({
-	id,
-	created: iso(created),
-	summary: "Request: TMR sticks (Alex)",
-	start: { dateTime: iso(slotStart) },
-	end: { dateTime: iso(slotStart + hour) },
-});
-
-test("gives up its hold when a racing request held the slot first", async () => {
-	rival = (ours) => racingHold("rival", Date.parse(ours.created) - 1000);
-	const response = await submit({ slot: iso(slotStart) });
-	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/taken/");
-	assert.deepEqual(deleted, [{ calendarId: "sam@example.com", eventId: "hold1" }]);
-	assert.deepEqual(calendars["sam@example.com"].map((e: any) => e.id).filter(Boolean), ["rival"]);
-	assert.equal(mails.length, 0);
-	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 0);
-});
-
-test("keeps its hold when it beat a racing request", async () => {
-	rival = (ours) => racingHold("rival", Date.parse(ours.created) + 1000);
-	const response = await submit({ slot: iso(slotStart) });
-	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+test("any number of requests can share a drop-off time", async () => {
+	await submit({ slot: iso(slotStart) });
+	const second = await submit({ slot: iso(slotStart), name: "Bob", email: "bob@example.com" });
+	assert.equal(second.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.deepEqual(holds.map((hold) => hold.calendarId), ["sam@example.com", "sam@example.com"]);
 	assert.equal(deleted.length, 0);
-	assert.equal(mails.length, 4);
-});
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 2);
 
-test("breaks a tie between racing holds by id, so both sides agree", async () => {
-	rival = (ours) => racingHold("a-rival", Date.parse(ours.created)); // "a-rival" < "hold1"
-	const lost = await submit({ slot: iso(slotStart) });
-	assert.equal(lost.headers.get("Location"), "https://repairs.perocho.com/request/taken/");
-
-	calendars["sam@example.com"] = calendars["sam@example.com"].filter((e: any) => e.id !== "a-rival");
-	rival = (ours) => racingHold("z-rival", Date.parse(ours.created)); // "z-rival" > "hold2"
-	const won = await submit({ slot: iso(slotStart) });
-	assert.equal(won.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	// Both holds are on Sam's calendar, and the time is still offered.
+	const { slots } = (await (await getSlots()).json()) as { slots: { start: string }[] };
+	assert.ok(slots.some((slot) => slot.start === iso(slotStart)));
 });
 
 test("drops honeypot submissions quietly", async () => {
@@ -369,8 +346,6 @@ test("drops honeypot submissions quietly", async () => {
 	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
 	assert.equal(mails.length, 0);
 });
-
-const getSlots = () => worker.fetch(new Request("https://intake.test/slots"), env);
 
 test("reuses the Google token across requests", async () => {
 	await getSlots();
@@ -399,8 +374,6 @@ test("the same request sent twice is filed once", async () => {
 test("the same request sent again a while later is a new one", async () => {
 	await submit({});
 	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - hour);
-	// Its hold gone (declined, say), so the time is free again.
-	calendars["sam@example.com"] = calendars["sam@example.com"].filter((e: any) => !e.id);
 	await submit({});
 	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 2);
 });
@@ -412,7 +385,7 @@ test("re-reads the calendars on submit, not what /slots last saw", async () => {
 		end: { dateTime: iso(slotStart + hour) },
 	});
 	const response = await submit({ slot: iso(slotStart) });
-	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/taken/");
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/closed/");
 	assert.equal(holds.length, 0);
 });
 
@@ -589,6 +562,7 @@ test("the first tech to take it books it and everyone hears", async () => {
 	assert.equal(patched.length, 1);
 	assert.equal(patched[0].calendarId, "sam@example.com");
 	assert.equal(patched[0].body.status, "confirmed");
+	assert.equal(patched[0].body.transparency, "transparent");
 	assert.equal(patched[0].body.summary, "Repair: PS5 deep cleaning (Jane)");
 	assert.deepEqual(deleted, [{ calendarId: "richard@example.com", eventId: "hold1" }]);
 
@@ -612,6 +586,8 @@ test("a tech without a hold gets the booking created when they take it", async (
 	await press(linkFor("richard@example.com"), "confirm");
 	const booking = holds.find((hold) => hold.calendarId === "richard@example.com");
 	assert.equal(booking?.body.status, "confirmed");
+	assert.equal(booking?.body.transparency, "transparent");
+	assert.equal(booking?.body.end.dateTime, iso(slotStart + quarter));
 	assert.deepEqual(deleted, [{ calendarId: "sam@example.com", eventId: "hold1" }]);
 });
 
@@ -681,26 +657,54 @@ test("nobody can take it once the time has started", async () => {
 	assert.ok(!body.includes("<form"));
 });
 
-test("a tech can't take two repairs at the same time", async () => {
+test("a tech can take two repairs dropped off at the same time", async () => {
+	await submit({ slot: iso(slotStart) });
+	await submit({ slot: iso(slotStart), name: "Bob", email: "bob@example.com" });
+	const [jane, bob] = to("sam@example.com").map((mail) => text(mail).match(/https:\/\/intake\.test\/offers\/[0-9a-f-]+/)![0]);
+	await press(jane, "confirm");
+	await press(bob, "confirm");
+	const rows = db.sqlite.prepare("SELECT status FROM requests").all();
+	assert.deepEqual(rows.map((row: any) => row.status), ["confirmed", "confirmed"]);
+});
+
+test("two techs pressing take at once: exactly one gets it", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
-	await press(linkFor("sam@example.com"), "confirm");
-
-	// Richard's hold went, so he's free for Bob's request at the same time; Sam has Jane's repair.
-	mails = [];
-	await submit({ slot: iso(slotStart), name: "Bob", email: "bob@example.com" });
-	const bob = () => db.sqlite.prepare("SELECT status FROM requests WHERE intake LIKE '%Bob%'").get() as any;
 	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
 	mails = [];
-	await press(sam, "confirm");
-	assert.equal(bob().status, "pending");
-	assert.equal(mails.length, 0);
-	const body = await (await offerPage(sam)).text();
-	assert.match(body, /You already have a repair then/);
-	assert.ok(!body.includes('value="confirm">'));
+	await Promise.all([press(richard, "confirm"), press(sam, "confirm")]);
+	assert.equal(status(), "confirmed");
+	assert.equal(patched.length, 1);
+	assert.equal(to("jane@example.com").length, 1);
+});
 
-	await press(richard, "confirm");
-	assert.equal(bob().status, "confirmed");
+test("a rush is marked everywhere the techs look, and priced for the customer", async () => {
+	both();
+	await submit({ slot: iso(slotStart), rush: "1" });
+	assert.equal(holds[0].body.summary, "Request: RUSH PS5 deep cleaning (Jane)");
+	assert.match(holds[0].body.description, /Rush: yes, \+\$20/);
+	assert.match(to("sam@example.com")[0].subject, /^Repair request: RUSH PS5 deep cleaning from Jane, /);
+	assert.match(to("repairs@perocho.com")[0].subject, /RUSH/);
+	assert.match(text(to("jane@example.com")[0]), /front of the queue\. That's \+\$20, paid in person/);
+	assert.doesNotMatch(to("jane@example.com")[0].subject, /RUSH/);
+
+	const sam = linkFor("sam@example.com");
+	const page = await (await offerPage(sam)).text();
+	assert.match(page, /New rush repair request/);
+	assert.match(page, /RUSH: \+\$20, paid in person/);
+
+	mails = [];
+	await press(sam, "confirm");
+	assert.equal(patched[0].body.summary, "Repair: RUSH PS5 deep cleaning (Jane)");
+	assert.match(to("richard@example.com")[0].subject, /^Taken by Sam: RUSH /);
+	assert.match(text(to("jane@example.com")[0]), /\+\$20/);
+});
+
+test("a request without a rush says nothing about one", async () => {
+	await submit({ slot: iso(slotStart) });
+	for (const mail of mails) assert.doesNotMatch(mail.subject + text(mail), /rush/i);
+	const page = await (await offerPage(linkFor("sam@example.com"))).text();
+	assert.doesNotMatch(page.split("<body>")[1], /rush/i);
 });
 
 // Google answers every `method` request with a 403, until the returned function is called.

@@ -77,10 +77,26 @@ test("free, all-day and declined events don't block", () => {
 	assert.equal(starts([events]).length, 3);
 });
 
-test("a request hold blocks the slot for that tech only", () => {
+test("the worker's holds and bookings are free, so any number of drop-offs share a time", () => {
+	const richard = [
+		available("09:00", "10:00"),
+		event("09:00", "09:15", { transparent: true }), // Request: cleaning
+		event("09:00", "09:15", { transparent: true }), // Repair: stick drift
+	];
+	assert.deepEqual(starts([richard], { slotMinutes: 15 }).map(([, techs]) => techs), [[0], [0], [0], [0]]);
+});
+
+test("an hour-long hold from before drop-offs still blocks, for that tech only", () => {
 	const richard = [available("09:00", "12:00"), event("09:00", "12:00") /* Request: cleaning */];
 	const sam = [available("09:00", "12:00")];
 	assert.deepEqual(starts([richard, sam]).map(([, techs]) => techs), [[1], [1], [1]]);
+});
+
+test("15-minute steps start at the block, not on the quarter hour", () => {
+	assert.deepEqual(
+		starts([[available("09:10", "10:00"), event("09:30", "09:40") /* Call */]], { slotMinutes: 15 }).map(([start]) => start),
+		["2026-11-02T14:10:00.000Z", "2026-11-02T14:40:00.000Z"],
+	);
 });
 
 test("each tech is only offered inside their own blocks", () => {

@@ -9,11 +9,15 @@ export interface Intake {
 	problem: string;
 	slot: number; // epoch ms of the drop-off time they picked
 	notes: string;
+	// The rush fee in dollars they agreed to, 0 for none. Kept as a fee, not a flag, so a later
+	// change to RUSH_FEE doesn't change what earlier customers were quoted.
+	rush: number;
 }
 
 // Requests filed before times and phone numbers were required (2026-10-29) are still in D1: their
-// intake may have no phone, a null slot and a `visit` nothing reads any more. Read rows as this.
-export type StoredIntake = Omit<Intake, "phone" | "slot"> & { phone?: string; slot: number | null };
+// intake may have no phone, a null slot and a `visit` nothing reads any more. Ones from before rush
+// have no `rush`. Read rows as this.
+export type StoredIntake = Omit<Intake, "phone" | "slot" | "rush"> & { phone?: string; slot: number | null; rush?: number };
 
 export type Parsed = { ok: true; intake: Intake } | { ok: false; spam: boolean };
 
@@ -29,7 +33,7 @@ export const validPhone = (phone: string) => PHONE.test(phone) && digits(phone) 
 // For a tel: link: the digits, and the + if they gave one.
 export const dialable = (phone: string) => (phone.trim().startsWith("+") ? "+" : "") + phone.replace(/\D/g, "");
 
-export function parseIntake(form: FormData): Parsed {
+export function parseIntake(form: FormData, rushFee: number): Parsed {
 	// Single-line unless told otherwise: CR/LF would leak into subjects and summaries.
 	const field = (name: string, max: number, multiline = false) => {
 		const value = form.get(name);
@@ -61,7 +65,7 @@ export function parseIntake(form: FormData): Parsed {
 		!Number.isNaN(slot);
 
 	if (!valid) return { ok: false, spam: false };
-	return { ok: true, intake: { ...fields, slot } };
+	return { ok: true, intake: { ...fields, slot, rush: form.get("rush") === "1" ? rushFee : 0 } };
 }
 
 export function formatTime(ms: number, timeZone: string): string {
@@ -87,6 +91,7 @@ export function describe(intake: StoredIntake, time: string | null): string {
 		["Service", intake.service],
 		["Device", intake.device],
 		["Drop-off time", time],
+		["Rush", intake.rush ? `yes, +$${intake.rush} (paid in person)` : ""],
 	]
 		.filter(([, value]) => value)
 		.map(([label, value]) => `${label}: ${value}`);
@@ -98,3 +103,6 @@ export function describe(intake: StoredIntake, time: string | null): string {
 
 // What the request is for: the chosen service, else the device.
 export const what = (intake: StoredIntake) => intake.service || intake.device;
+
+// Leads what the techs see about a request, so a rush stands out in a list of emails or events.
+export const rushed = (intake: StoredIntake) => (intake.rush ? `RUSH ${what(intake)}` : what(intake));

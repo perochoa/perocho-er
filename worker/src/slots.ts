@@ -2,7 +2,8 @@
 //
 // A tech is bookable only inside their own "Available..." blocks (any timed event whose title
 // starts with "Available"), except where another timed event of theirs overlaps. All-day events,
-// events marked "Show as free" and invites they declined don't block anything.
+// events marked "Show as free" and invites they declined don't block anything. The worker's own
+// holds and bookings are "free": a time is a drop-off, and any number of customers can share one.
 
 export interface CalendarEvent {
 	start: number; // epoch ms

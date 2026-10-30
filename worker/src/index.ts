@@ -1,5 +1,5 @@
 // Intake for repairs.perocho.com.
-//   GET  /slots          open times in the techs' "Available" blocks, for the form's time list
+//   GET  /slots          open drop-off times in the techs' "Available" blocks, for the form's time list
 //   POST /request        the form; holds the picked time on every free tech's calendar, offers it to
 //                        every tech by email and tells the customer, then redirects back to the
 //                        site (the form works without JS)
@@ -8,11 +8,11 @@
 // and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time.
 
 import { sendMail } from "./fastmail.ts";
-import { accessToken, createEvent, deleteEvent, listEvents, type ListedEvent } from "./google.ts";
+import { accessToken, createEvent, deleteEvent, listEvents } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
 import { act, expire, page } from "./offers.ts";
-import { blocks, openSlots, type Slot } from "./slots.ts";
+import { openSlots, type Slot } from "./slots.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
@@ -83,8 +83,8 @@ async function slots(env: Env, origin: string | null, ip: string | null): Promis
 		{
 			headers: {
 				"Access-Control-Allow-Origin": origin && allowed.includes(origin) ? origin : env.SITE_URL,
-				// Revalidate every time: after a "taken" result the form must not re-offer the slot it
-				// just lost from the browser's cache.
+				// Revalidate every time: after a "closed" result the form must not re-offer the time
+				// it just turned down from the browser's cache.
 				"Cache-Control": "no-cache",
 				Vary: "Origin",
 			},
@@ -92,16 +92,13 @@ async function slots(env: Env, origin: string | null, ip: string | null): Promis
 	);
 }
 
-// Whether `event` was written before our hold. Ties on `created` fall back to the id, so two
-// racing requests always agree on which of them came first.
-const before = (event: ListedEvent, hold: { id: string; created: number }) =>
-	event.created < hold.created || (event.created === hold.created && event.id < hold.id);
-
 // Each outcome is a page in src/pages/request/[outcome].astro, so add or remove them together.
-type Outcome = "sent" | "taken" | "failed";
+// "closed": the picked time isn't open any more (now inside the lead time, or a tech changed their
+// blocks or added an event); other requests never close a time, since drop-offs share them.
+type Outcome = "sent" | "closed" | "failed";
 
 async function request(env: Env, form: FormData, ip: string | null, origin: string): Promise<Outcome> {
-	const parsed = parseIntake(form);
+	const parsed = parseIntake(form, env.RUSH_FEE);
 	if (!parsed.ok) return parsed.spam ? "sent" : "failed";
 	const { intake } = parsed;
 
@@ -133,50 +130,22 @@ interface Offer {
 	holdId: string | null;
 }
 
-// A tentative hold on the tech's calendar, or null when a racing request held the slot first.
-async function hold(env: Env, token: string, offer: Offer, slot: Slot, intake: Intake, link: string) {
-	const time = formatTime(slot.start, env.TIME_ZONE);
-	const { calendarId } = offer.tech;
-	const ours = await createEvent(token, calendarId, {
+// A tentative hold on the tech's calendar. It's "free", so it never keeps anyone else from the time.
+const hold = (env: Env, token: string, offer: Offer, slot: Slot, intake: Intake, link: string) =>
+	createEvent(token, offer.tech.calendarId, {
 		summary: notices.holdSummary(intake),
-		description: notices.holdDescription(intake, time, link),
+		description: notices.holdDescription(intake, formatTime(slot.start, env.TIME_ZONE), link),
 		start: slot.start,
 		end: slot.end,
 		timeZone: env.TIME_ZONE,
 	});
-
-	// Two requests for one slot can both get past the first check and both write a hold, so look
-	// again now that ours is written: if anything else blocking the slot came first, give it up.
-	// That covers any event, not only other requests' holds, so it doesn't rely on their titles.
-	try {
-		const events = await listEvents(token, calendarId, slot.start, slot.end);
-		const lost = events.some(
-			(event) =>
-				event.id !== ours.id &&
-				blocks(event) &&
-				event.start < slot.end &&
-				event.end > slot.start &&
-				before(event, ours),
-		);
-		if (lost) {
-			await deleteEvent(token, calendarId, ours.id);
-			return null;
-		}
-	} catch (error) {
-		// Our hold is written, so keep it; at worst the tech sees two holds. That includes one that
-		// lost but couldn't be deleted: once the request is settled the hourly job deletes it, and
-		// whichever request a tech takes first, they can't take the other too.
-		console.error(error);
-	}
-	return ours.id;
-}
 
 // How long the same form sent again counts as the request already filed.
 const REPEAT_MS = 10 * 60_000;
 
 async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> {
 	// A double press, or the form sent again from the back button, is the request already filed:
-	// filing it again would find its own hold and say "taken", or email everyone twice.
+	// filing it again would email everyone twice.
 	const repeat = await env.DB.prepare("SELECT 1 FROM requests WHERE intake = ? AND created > ?")
 		.bind(JSON.stringify(intake), Date.now() - REPEAT_MS)
 		.first();
@@ -188,7 +157,7 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 
 	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
 	const slot = (await findSlots(env, token, techs)).slots.find((s) => s.start === intake.slot);
-	if (!slot) return "taken";
+	if (!slot) return "closed";
 
 	// Every tech free then gets a hold, so they can all plan around it until one takes it.
 	const held = await Promise.allSettled(
@@ -198,11 +167,9 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 		if (result.status === "fulfilled") offers[slot.techs[i]].holdId = result.value;
 		else console.error(result.reason);
 	});
+	// An open time has a free tech, so no holds at all means Google failed.
 	if (!offers.some((offer) => offer.holdId)) {
-		// Lost every race means taken; anything else is a failure.
-		const failure = held.find((result) => result.status === "rejected");
-		if (failure) throw failure.reason;
-		return "taken";
+		throw (held.find((result) => result.status === "rejected") as PromiseRejectedResult).reason;
 	}
 
 	const id = crypto.randomUUID();
@@ -243,8 +210,8 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 		);
 	} catch (error) {
 		// There's always a hold by now, and its description has every detail and the tech's link.
-		// Sending them to "failed" would make a retry find their own hold and say "taken", and any
-		// emails that did go out need their links to keep working.
+		// Sending them to "failed" would make a retry file it twice, and any emails that did go out
+		// need their links to keep working.
 		console.error(error);
 	}
 	return "sent";
