@@ -8,13 +8,28 @@ interface Props {
 	title: string;
 	// Also the meta description.
 	text: string;
+	// "done" draws a check; otherwise the logo's worn ring drifts beside the fixed disc.
+	mark?: "done" | "drift";
 }
 
-const { eyebrow, title, text } = Astro.props;
+const { eyebrow, title, text, mark = "drift" } = Astro.props;
 ---
 
 <BaseLayout title={`${title} · ${site.name}`} description={text} noindex>
 	<main class="wrap">
+		{
+			mark === "done" ? (
+				<svg class="mark done" viewBox="0 0 64 64" aria-hidden="true">
+					<circle cx="32" cy="32" r="28" />
+					<path d="M20 33l8 8 16-17" />
+				</svg>
+			) : (
+				<svg class="mark drift" viewBox="0 0 64 64" aria-hidden="true">
+					<circle class="worn" cx="38" cy="26" r="15" />
+					<circle class="fixed" cx="28" cy="36" r="15" />
+				</svg>
+			)
+		}
 		<p class="eyebrow">{eyebrow}</p>
 		<h1>{title}</h1>
 		<p>{text}</p>
@@ -30,6 +45,60 @@ const { eyebrow, title, text } = Astro.props;
 	}
 	h1 {
 		margin: 0 0 1rem;
+	}
+	.mark {
+		display: block;
+		width: 3.5rem;
+		height: 3.5rem;
+		margin-bottom: 1.5rem;
+		color: var(--accent);
+	}
+	.done circle {
+		fill: color-mix(in srgb, var(--accent) 12%, transparent);
+		stroke: currentColor;
+		stroke-width: 3;
+	}
+	.done path {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 5;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.drift .worn {
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 5;
+		opacity: 0.45;
+	}
+	.drift .fixed {
+		fill: currentColor;
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.done circle {
+			stroke-dasharray: 176;
+			animation: draw 0.6s ease-out backwards;
+		}
+		.done path {
+			stroke-dasharray: 40;
+			animation: draw 0.4s ease-out 0.45s backwards;
+		}
+		.drift .worn {
+			animation: wander 4s ease-in-out infinite;
+		}
+	}
+	@keyframes draw {
+		from {
+			stroke-dashoffset: var(--length, 176);
+		}
+	}
+	.done path {
+		--length: 40;
+	}
+	@keyframes wander {
+		50% {
+			transform: translate(3px, -2px);
+		}
 	}
 	p:not(.eyebrow) {
 		margin: 0 0 2rem;
