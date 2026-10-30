@@ -23,7 +23,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // (a local number with its area code, up to an international one). Kept as they typed it.
 const PHONE = /^\+?[\d\s().-]+$/;
 const digits = (phone: string) => phone.replace(/\D/g, "").length;
-export const validPhone = (phone: string) => PHONE.test(phone) && digits(phone) >= 10 && digits(phone) <= 15;
+const validPhone = (phone: string) => PHONE.test(phone) && digits(phone) >= 10 && digits(phone) <= 15;
 
 // For a tel: link: the digits, and the + if they gave one.
 export const dialable = (phone: string) => (phone.trim().startsWith("+") ? "+" : "") + phone.replace(/\D/g, "");

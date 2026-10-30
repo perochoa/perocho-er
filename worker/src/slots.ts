@@ -35,13 +35,13 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
 // The hours an all-day "Available" block stands for, in the worker's time zone.
-export const ALL_DAY_FROM = 9;
-export const ALL_DAY_TO = 19;
+const ALL_DAY_FROM = 9;
+const ALL_DAY_TO = 19;
 
 export const isAvailable = (summary: string) => /^\s*available/i.test(summary);
 
 // Availability blocks are only read for free time; they never take it away.
-export const blocks = (event: CalendarEvent) =>
+const blocks = (event: CalendarEvent) =>
 	!event.allDay && !event.transparent && !event.declined && !event.available;
 
 // One formatter per time zone; building them is slow and the zone list is tiny.
