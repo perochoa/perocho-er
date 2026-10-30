@@ -12,6 +12,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { sendMail } from "../src/fastmail.ts";
 import { accessToken, listEvents } from "../src/google.ts";
+import { EMAIL } from "../src/intake.ts";
 import { openSlots } from "../src/slots.ts";
 import { parseTechs, type Tech } from "../src/techs.ts";
 
@@ -42,9 +43,6 @@ const fail = (message: string) => {
 	console.log(`  FAIL  ${message}`);
 };
 
-// Loose on purpose: catches typos and calendar IDs used as addresses, not every invalid address.
-const looksLikeEmail = (address: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address);
-
 function readTechs(): Tech[] | null {
 	const raw = process.env.TECHS ?? readFileSync(args.techs ?? "techs.json", "utf8");
 	try {
@@ -66,7 +64,7 @@ function checkList(techs: Tech[]) {
 		const { email } = tech;
 		if (/calendar\.google\.com$/i.test(email)) {
 			fail(`${tech.name}: requests would go to the calendar ID ${email}, which can't get mail; add an "email"`);
-		} else if (!looksLikeEmail(email)) {
+		} else if (!EMAIL.test(email)) {
 			fail(`${tech.name}: "${email}" doesn't look like an email address`);
 		}
 	}

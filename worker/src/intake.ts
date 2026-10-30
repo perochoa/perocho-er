@@ -17,7 +17,7 @@ export interface Intake {
 export type Parsed = { ok: true; intake: Intake } | { ok: false; spam: boolean };
 
 // Loose on purpose: catches typos and junk, not every invalid address.
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Also loose: digits with the usual separators and an optional leading +, 10 to 15 digits
 // (a local number with its area code, up to an international one). Kept as they typed it.
