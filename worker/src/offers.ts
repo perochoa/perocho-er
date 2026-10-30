@@ -162,7 +162,8 @@ async function finish(env: Env, { offer, request }: Loaded) {
 
 // Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
 // customer, then deletes the holds nobody needs any more: a declined tech's, and every hold but
-// the booking once a request is settled. Holds whose delete failed earlier are among them.
+// the booking once a request is settled. Holds whose delete failed earlier are among them. Last,
+// it deletes the customer's details once a request is settled and RETENTION_DAYS past its time.
 export async function expire(env: Env, now = Date.now()): Promise<void> {
 	const { results: expired } = await env.DB.prepare(
 		`UPDATE requests SET status = 'expired'
@@ -187,17 +188,28 @@ export async function expire(env: Env, now = Date.now()): Promise<void> {
 		 WHERE offers.hold_id IS NOT NULL AND offers.token IS NOT requests.confirmed_by
 		 AND (offers.declined = 1 OR requests.status != 'pending')`,
 	).all<OfferRow>();
-	if (strays.length === 0) return;
-	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
-	for (const offer of strays) {
-		try {
-			await deleteEvent(token, offer.calendar_id, offer.hold_id!);
-			await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(offer.token).run();
-		} catch (error) {
-			// Still on the calendar; the next run tries again.
-			console.error(error);
+	if (strays.length > 0) {
+		const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+		for (const offer of strays) {
+			try {
+				await deleteEvent(token, offer.calendar_id, offer.hold_id!);
+				await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(offer.token).run();
+			} catch (error) {
+				// Still on the calendar; the next run tries again.
+				console.error(error);
+			}
 		}
 	}
+
+	// Settled: nobody took it, or it's back with the customer. A repair still in someone's queue
+	// stays however old it is. Offers first, since they point at the request.
+	const settled = `SELECT id FROM requests WHERE slot_start < ?1
+		AND (status IN ('declined', 'expired') OR done IS NOT NULL)`;
+	const cutoff = now - env.RETENTION_DAYS * 86_400_000;
+	await env.DB.batch([
+		env.DB.prepare(`DELETE FROM offers WHERE request_id IN (${settled})`).bind(cutoff),
+		env.DB.prepare(`DELETE FROM requests WHERE id IN (${settled})`).bind(cutoff),
+	]);
 }
 
 export async function act(env: Env, token: string, action: string): Promise<void> {

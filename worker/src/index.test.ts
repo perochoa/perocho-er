@@ -22,6 +22,7 @@ const env = {
 	LEAD_HOURS: 2,
 	DAYS_AHEAD: 31,
 	RUSH_FEE: 20,
+	RETENTION_DAYS: 180,
 	DEV_ORIGINS: "",
 	TECHS: JSON.stringify([
 		{ name: "Richard", calendarId: "richard@example.com" },
@@ -947,6 +948,45 @@ test("the hourly job leaves a finished repair and its booking alone", async () =
 	await tick();
 	assert.equal(status(), "confirmed");
 	assert.equal(deleted.length + mails.length, 0);
+});
+
+// Retention: the hourly job deletes settled requests, offers first, once RETENTION_DAYS have passed.
+
+const day = 24 * hour;
+const count = (table: string) => (db.sqlite.prepare(`SELECT count(*) AS n FROM ${table}`).get() as any).n;
+// Moves every request's drop-off to `days` ago.
+const age = (days: number) =>
+	db.sqlite.prepare("UPDATE requests SET slot_start = ?1, slot_end = ?1 + ?2").run(Date.now() - days * day, quarter);
+
+test("the hourly job deletes settled requests and their offers once they're old enough", async () => {
+	both();
+	await submit({ slot: iso(slotStart) }); // nobody takes it, so it expires
+	await press(await taken({ slot: iso(slotStart + quarter) }), "done");
+	mails = [];
+	await submit({ slot: iso(slotStart + 2 * quarter) });
+	for (const tech of ["richard@example.com", "sam@example.com"]) await press(linkFor(tech), "decline");
+	assert.equal(count("requests"), 3);
+
+	age(env.RETENTION_DAYS + 1);
+	await tick();
+	assert.equal(count("requests"), 0);
+	assert.equal(count("offers"), 0);
+});
+
+test("the hourly job keeps an old repair that isn't marked done", async () => {
+	await taken({});
+	age(env.RETENTION_DAYS + 1);
+	await tick();
+	assert.equal(status(), "confirmed");
+	assert.equal(count("offers"), 2);
+});
+
+test("the hourly job keeps a settled request until it's old enough", async () => {
+	await press(await taken({}), "done");
+	age(env.RETENTION_DAYS - 1);
+	await tick();
+	assert.equal(count("requests"), 1);
+	assert.equal(count("offers"), 2);
 });
 
 test("answers an unknown queue link with 404", async () => {

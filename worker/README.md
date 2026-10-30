@@ -59,7 +59,8 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   the calendar too: the hold has everything the email would have, including your link.
 - Times are offered between 2 hours and 31 days ahead, on the quarter hour inside each
   block (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
-  `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same.
+  `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same (`npm test` fails if they
+  differ).
 
 ## Setup
 
@@ -148,9 +149,9 @@ DEV_ORIGINS=http://localhost:4321
 Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
 already sent keep going to the techs they were sent to.
 
-To check a TECHS list before or after setting it, put it in `techs.json` here (keep it out of
-git) and the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or
-pass `--key <file>`:
+To check a TECHS list before or after setting it, put it in `techs.json` here (gitignored) and
+the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or save the
+key as `service-account.json` here (also gitignored) and pass `--key service-account.json`:
 
 ```sh
 npm run check-techs             # the list, calendar sharing, "Available" blocks and open times
@@ -158,6 +159,15 @@ npm run check-techs -- --send   # also emails each tech a test (FASTMAIL_TOKEN i
 ```
 
 It changes nothing on the calendars, and exits 1 if any check failed.
+
+## Customer data
+
+Requests, with the customer's name, email, phone and what they wrote, are kept in D1 while
+they're in use. The hourly job deletes a request and its offers `RETENTION_DAYS` (180) days
+after its drop-off time once it's settled: declined by every tech, expired, or marked done. A
+repair that's taken but not marked done stays until it is, so it never drops out of a queue.
+The emails and calendar events about it aren't touched. Change it in `wrangler.jsonc`, then
+`npm run types` and deploy.
 
 ## Spam
 

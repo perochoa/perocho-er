@@ -25,7 +25,7 @@
 			"database_id": "b7ed3a0c-2280-4244-abc1-d8693bb0a9c5"
 		}
 	],
-	// Hourly: expires requests nobody took in time and deletes holds left on calendars (src/offers.ts).
+	// Hourly: expires requests nobody took in time, deletes holds left on calendars and old settled requests (src/offers.ts).
 	"triggers": { "crons": ["0 * * * *"] },
 	"vars": {
 		"SITE_URL": "https://repairs.perocho.com",
@@ -38,6 +38,9 @@
 		"DAYS_AHEAD": 31,
 		// Dollars added for a rush (front of the queue), paid in person. Keep rushFee in src/site.ts the same: src/config.test.ts fails if they differ.
 		"RUSH_FEE": 20,
+		// Days after its drop-off time that a settled request (declined, expired or marked done) and
+		// the customer's details in it are deleted, by the hourly job.
+		"RETENTION_DAYS": 180,
 		// Comma-separated origins also allowed to read /slots, besides SITE_URL. Leave empty here;
 		// set it in .dev.vars for local work, e.g. DEV_ORIGINS=http://localhost:4321
 		"DEV_ORIGINS": ""
