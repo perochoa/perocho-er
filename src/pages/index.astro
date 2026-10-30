@@ -8,9 +8,10 @@ import Reviews from "../components/Reviews.astro";
 import Services from "../components/Services.astro";
 import Steps from "../components/Steps.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { getServices } from "../services";
 import { site } from "../site";
 
-const services = (await getCollection("services")).sort((a, b) => a.data.order - b.data.order);
+const services = await getServices();
 const repairs = (await getCollection("repairs")).sort(
 	(a, b) => b.data.date.valueOf() - a.data.date.valueOf(),
 );

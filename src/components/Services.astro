@@ -1,6 +1,7 @@
 ---
 // Home page: the service cards, with a price calculator on per-item ones.
 import { type CollectionEntry, render } from "astro:content";
+import { priceText } from "../services";
 import { site } from "../site";
 
 interface Props {
@@ -10,13 +11,6 @@ interface Props {
 const renderedServices = await Promise.all(
 	Astro.props.services.map(async (service) => ({ ...service, Content: (await render(service)).Content })),
 );
-
-// Per-item services build their price line from the calculator's numbers, so the two can't disagree.
-const priceText = ({ price, perItem }: CollectionEntry<"services">["data"]) =>
-	price ??
-	(perItem
-		? `$${perItem.price} per ${perItem.item}, or $${perItem.bulkPrice} per ${perItem.item} for ${perItem.bulkFrom} or more`
-		: "Message us for a quote");
 ---
 
 <section id="services" class="band" aria-labelledby="services-title">

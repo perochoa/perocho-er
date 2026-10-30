@@ -1,12 +1,12 @@
 ---
-import { getCollection } from "astro:content";
 import CharacterCount from "../../components/CharacterCount.astro";
 import SlotPicker from "../../components/SlotPicker.astro";
 import BaseLayout from "../../layouts/BaseLayout.astro";
 import { marketplace } from "../../reviews";
+import { getServices } from "../../services";
 import { site } from "../../site";
 
-const services = (await getCollection("services")).sort((a, b) => a.data.order - b.data.order);
+const services = await getServices();
 ---
 
 <BaseLayout title={`Request a repair · ${site.name}`} description={`Request a repair from ${site.name}.`}>
