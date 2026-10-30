@@ -1,0 +1,161 @@
+---
+// Home page: the intro, the Marketplace rating and the joystick.
+import HeroScene from "./HeroScene.astro";
+import Joystick from "./Joystick.astro";
+import Rosette from "./Rosette.astro";
+import { marketplace } from "../reviews";
+import { site } from "../site";
+---
+
+<section class="hero">
+	<HeroScene />
+	<div class="wrap hero-grid">
+		<div class="intro">
+			<p class="eyebrow">Family-run · Drop-off in Mississauga</p>
+			<h1>{site.tagline}</h1>
+			<p class="lede">{site.intro}</p>
+			<div class="actions">
+				{
+					site.intakeUrl ? (
+						<>
+							<a class="button" href="/request/">Request a repair</a>
+							<a class="button secondary" href={site.messengerUrl}>Message us</a>
+						</>
+					) : (
+						<>
+							<a class="button" href={site.messengerUrl}>Message us</a>
+							<a class="button secondary" href="#services">See prices</a>
+						</>
+					)
+				}
+			</div>
+			{
+				marketplace && (
+					<a class="rating" href="#reviews">
+						<span class="badge">
+							<Rosette />
+							Highly rated on Facebook Marketplace
+						</span>
+						<span>
+							<span class="stars" aria-hidden="true">{"★".repeat(marketplace.stars)}</span>{" "}
+							{marketplace.stars} stars from {marketplace.ratings} ratings
+						</span>
+					</a>
+				)
+			}
+		</div>
+
+		<Joystick requestHref={site.intakeUrl ? "/request/" : ""} />
+	</div>
+</section>
+
+<style>
+	.hero {
+		position: relative;
+		overflow: hidden;
+		isolation: isolate;
+		padding-block: clamp(3rem, 2rem + 5vw, 6rem);
+	}
+	.hero-grid {
+		position: relative;
+		z-index: 1;
+		display: grid;
+		grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+		align-items: center;
+		gap: 3rem;
+	}
+	h1 {
+		margin: 0;
+	}
+	/* The intro rises in on load, one line after another. */
+	@media (prefers-reduced-motion: no-preference) {
+		.intro > * {
+			animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+		}
+		.intro > :nth-child(2) {
+			animation-delay: 0.08s;
+		}
+		.intro > :nth-child(3) {
+			animation-delay: 0.16s;
+		}
+		.intro > :nth-child(4) {
+			animation-delay: 0.24s;
+		}
+		.intro > :nth-child(5) {
+			animation-delay: 0.32s;
+		}
+	}
+	@keyframes rise {
+		from {
+			opacity: 0;
+			transform: translateY(0.75rem);
+		}
+	}
+	.lede {
+		margin: 1.25rem 0 0;
+		max-width: 32rem;
+		font-size: 1.1875rem;
+		color: var(--muted);
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.75rem;
+		margin-top: 2rem;
+	}
+	.rating {
+		display: inline-flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 0.25rem 0.5rem;
+		margin-top: 1.5rem;
+		color: var(--muted);
+		font-size: 0.9375rem;
+		text-decoration: none;
+	}
+	.rating:hover {
+		color: var(--accent);
+	}
+	.rating {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+	/* On hover the badge firms up in the accent, its rosette pops out with a turn and the stars
+	   spread out with a glow. Eased out with no overshoot, and held while hovered. */
+	.rating:hover .badge,
+	.rating:focus-visible .badge {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.rating .badge :global(svg) {
+			transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+		}
+		.rating:hover .badge :global(svg),
+		.rating:focus-visible .badge :global(svg) {
+			transform: rotate(1turn) scale(1.2);
+		}
+		.rating .stars {
+			transition:
+				letter-spacing 0.35s cubic-bezier(0.2, 0.7, 0.2, 1),
+				filter 0.35s;
+		}
+		.rating:hover .stars,
+		.rating:focus-visible .stars {
+			letter-spacing: 0.2em;
+			filter: drop-shadow(0 0 4px var(--accent));
+		}
+	}
+
+	@media (max-width: 48rem) {
+		.hero-grid {
+			grid-template-columns: minmax(0, 1fr);
+			gap: 2.5rem;
+		}
+	}
+	@media (max-width: 30rem) {
+		.actions .button {
+			flex: 1;
+		}
+	}
+</style>

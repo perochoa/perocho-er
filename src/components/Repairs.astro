@@ -1,0 +1,67 @@
+---
+// Home page: before-and-after photos of past repairs. Shows nothing until there are any.
+import { Image } from "astro:assets";
+import { type CollectionEntry, render } from "astro:content";
+
+interface Props {
+	repairs: CollectionEntry<"repairs">[];
+}
+
+const renderedRepairs = await Promise.all(
+	Astro.props.repairs.map(async (repair) => ({ ...repair, Content: (await render(repair)).Content })),
+);
+
+const monthFormat = new Intl.DateTimeFormat("en-CA", { month: "long", year: "numeric" });
+---
+
+{
+	renderedRepairs.length > 0 && (
+		<section id="repairs" class="band" aria-labelledby="repairs-title">
+			<div class="wrap">
+				<p class="eyebrow">Past repairs</p>
+				<h2 id="repairs-title">Before and after</h2>
+				<ul class="cards">
+					{renderedRepairs.map(({ data, Content }, i) => (
+						<li class="card" data-reveal style={`--i: ${i}`}>
+							<h3>{data.title}</h3>
+							<p class="meta">
+								{data.device} · <time datetime={data.date.toISOString()}>{monthFormat.format(data.date)}</time>
+							</p>
+							<div class="photos">
+								<figure>
+									<Image src={data.before} alt={data.beforeAlt} width={400} />
+									<figcaption>Before</figcaption>
+								</figure>
+								<figure>
+									<Image src={data.after} alt={data.afterAlt} width={400} />
+									<figcaption>After</figcaption>
+								</figure>
+							</div>
+							<Content />
+						</li>
+					))}
+				</ul>
+			</div>
+		</section>
+	)
+}
+
+<style>
+	.meta,
+	figcaption {
+		color: var(--muted);
+	}
+	.photos {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+	}
+	figure {
+		margin: 0;
+	}
+	figure :global(img) {
+		width: 100%;
+		height: auto;
+		border-radius: 0.375rem;
+	}
+</style>

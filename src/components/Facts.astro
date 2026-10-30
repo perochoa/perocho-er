@@ -1,0 +1,68 @@
+---
+// Home page: the "At a glance" strip under the hero.
+import { site } from "../site";
+
+// Only facts the site already states elsewhere; nothing invented. The rating is in the hero.
+const facts = [
+	{ value: "~1 hr", label: "for most stick drift fixes" },
+	{ value: "Drop-off", label: site.intakeUrl ? "at any open time you pick online" : "in Mississauga" },
+	{ value: "Cash", label: "or Interac e-Transfer on pickup" },
+];
+---
+
+<section class="facts" aria-label="At a glance">
+	<ul class="wrap fact-grid">
+		{
+			facts.map((fact, i) => (
+				<li data-reveal style={`--i: ${i}`}>
+					<strong>{fact.value}</strong>
+					<span>{fact.label}</span>
+				</li>
+			))
+		}
+	</ul>
+</section>
+
+<style>
+	.facts {
+		background: var(--surface);
+		border-block: 1px solid var(--line);
+	}
+	.fact-grid {
+		display: grid;
+		grid-template-columns: repeat(3, minmax(0, 1fr));
+		margin-block: 0;
+		list-style: none;
+	}
+	.fact-grid li {
+		display: flex;
+		flex-direction: column;
+		gap: 0.125rem;
+		padding: 1.25rem 1.25rem 1.25rem 0;
+	}
+	.fact-grid li + li {
+		padding-left: 1.25rem;
+		border-left: 1px solid var(--line);
+	}
+	.fact-grid strong {
+		font-family: var(--font-mono);
+		font-size: 1.375rem;
+		font-weight: 500;
+		color: var(--accent);
+	}
+	.fact-grid span {
+		color: var(--muted);
+		font-size: 0.9375rem;
+	}
+
+	@media (max-width: 30rem) {
+		.fact-grid {
+			grid-template-columns: minmax(0, 1fr);
+		}
+		.fact-grid li + li {
+			padding-left: 0;
+			border-left: 0;
+			border-top: 1px solid var(--line);
+		}
+	}
+</style>
