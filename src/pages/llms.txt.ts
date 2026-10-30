@@ -1,7 +1,7 @@
 import type { APIRoute } from "astro";
 import { marketplace } from "../reviews";
 import { getServices, priceText } from "../services";
-import { site } from "../site";
+import { paymentText, site } from "../site";
 
 // The site as Markdown for AI assistants (https://llmstxt.org), from the same details the home page
 // shows. public/robots.txt lets their crawlers in.
@@ -36,7 +36,7 @@ export const GET: APIRoute = async ({ site: origin }) => {
 			: ["- Message us on Messenger or by email for a quote and a drop-off time."]),
 		...(site.serviceArea ? [`- Where: ${site.serviceArea}`] : []),
 		...(site.hours ? [`- When: ${site.hours}`] : []),
-		"- Payment: cash or Interac e-Transfer at pickup.",
+		`- Payment: ${paymentText} at pickup.`,
 		"",
 		"## Contact",
 		"",

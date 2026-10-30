@@ -1,12 +1,16 @@
 ---
 // Home page: the "At a glance" strip under the hero.
-import { site } from "../site";
+import { capitalized, site } from "../site";
 
 // Only facts the site already states elsewhere; nothing invented. The rating is in the hero.
+const [firstPayment, ...otherPayments] = site.payments;
 const facts = [
 	{ value: "~1 hr", label: "for most stick drift fixes" },
-	{ value: "Drop-off", label: site.intakeUrl ? "at any open time you pick online" : "in Mississauga" },
-	{ value: "Cash", label: "or Interac e-Transfer on pickup" },
+	{ value: "Drop-off", label: site.intakeUrl ? "at any open time you pick online" : `in ${site.city}` },
+	{
+		value: capitalized(firstPayment),
+		label: [...otherPayments.map((way) => `or ${way}`), "on pickup"].join(" "),
+	},
 ];
 ---
 

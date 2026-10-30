@@ -3,7 +3,7 @@
 // services list the page renders.
 import { marketplace } from "./reviews";
 import { basePrice, priceText, type Service } from "./services";
-import { site } from "./site";
+import { capitalized, site } from "./site";
 
 export function homeStructuredData(origin: URL, services: Service[]) {
 	const url = new URL("/", origin).href;
@@ -31,13 +31,13 @@ export function homeStructuredData(origin: URL, services: Service[]) {
 				// Drop-off only, and the street address is given by message, so only the city.
 				address: {
 					"@type": "PostalAddress",
-					addressLocality: "Mississauga",
+					addressLocality: site.city,
 					addressRegion: "ON",
 					addressCountry: "CA",
 				},
-				areaServed: { "@type": "City", name: "Mississauga" },
+				areaServed: { "@type": "City", name: site.city },
 				// As the "At a glance" strip and the steps say.
-				paymentAccepted: "Cash, Interac e-Transfer",
+				paymentAccepted: site.payments.map(capitalized).join(", "),
 				currenciesAccepted: "CAD",
 				// The Marketplace rating stays out: Google doesn't take ratings gathered from another site.
 				sameAs: marketplace ? [marketplace.url] : [],

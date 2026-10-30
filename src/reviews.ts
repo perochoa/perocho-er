@@ -1,3 +1,5 @@
+import { site } from "./site";
+
 // From the Marketplace profile (url). Update by hand now and then. Quotes have spelling, grammar
 // and punctuation fixed, but keep the buyer's words and meaning: don't add claims they didn't make.
 // Unset hides the reviews and every link to Marketplace.
@@ -29,7 +31,7 @@ export const highlyRated = (m: Marketplace) => m.stars >= 4.5 && m.ratings >= 5;
 export const starRow = (stars: number) => "★".repeat(Math.round(stars));
 
 export const marketplace: Marketplace | undefined = {
-	url: "https://www.facebook.com/marketplace/profile/1786877701",
+	url: `https://www.facebook.com/marketplace/profile/${site.facebookId}`,
 	stars: 5,
 	ratings: 75,
 	strengths: [

@@ -19,7 +19,7 @@ const repairs = (await getCollection("repairs")).sort(
 ---
 
 <BaseLayout
-	title={`${site.name} · PS5 repairs in Mississauga`}
+	title={`${site.name} · PS5 repairs in ${site.city}`}
 	description={site.description}
 	structuredData={homeStructuredData(Astro.site!, services)}
 >
