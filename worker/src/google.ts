@@ -28,6 +28,8 @@ export const resetTokenCache = () => {
 };
 
 export async function accessToken(serviceAccountJson: string): Promise<string> {
+	// Unset in local dev when .dev.vars is missing or doesn't parse.
+	if (!serviceAccountJson) throw new Error("GOOGLE_SERVICE_ACCOUNT is not set");
 	if (cached?.account === serviceAccountJson && Date.now() < cached.exp - 300_000) return cached.token;
 	const account: ServiceAccount = JSON.parse(serviceAccountJson);
 	const pem = account.private_key.replace(/-----[^-]+-----|\s/g, "");

@@ -31,6 +31,7 @@ const vars = JSON.parse(readFileSync("wrangler.jsonc", "utf8").replace(/^\s*\/\/
 	SLOT_MINUTES: number;
 	LEAD_HOURS: number;
 	DAYS_AHEAD: number;
+	TIME_ZONE: string;
 };
 
 let failed = false;
@@ -94,15 +95,16 @@ async function checkCalendar(token: string, tech: Tech, now: number) {
 
 	const to = now + vars.DAYS_AHEAD * 86_400_000;
 	const events = await listEvents(token, tech.calendarId, now, to);
-	const blocks = events.filter((event) => event.available && !event.allDay && !event.declined).length;
+	const blocks = events.filter((event) => event.available && !event.declined).length;
 	const slots = openSlots([events], {
 		now,
 		slotMinutes: vars.SLOT_MINUTES,
 		leadHours: vars.LEAD_HOURS,
 		daysAhead: vars.DAYS_AHEAD,
+		timeZone: vars.TIME_ZONE,
 	}).length;
 	const window = `in the next ${vars.DAYS_AHEAD} days`;
-	if (blocks === 0) warn(`no timed "Available..." blocks ${window}, so they won't be offered any times`);
+	if (blocks === 0) warn(`no "Available..." blocks ${window}, so they won't be offered any times`);
 	else if (slots === 0) warn(`${blocks} "Available..." block${blocks === 1 ? "" : "s"} ${window}, but other events cover every time in them, or they are too soon`);
 	else ok(`${blocks} "Available..." block${blocks === 1 ? "" : "s"}, ${slots} open time${slots === 1 ? "" : "s"} ${window}`);
 }

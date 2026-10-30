@@ -36,6 +36,26 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 		<SiteHeader />
 		<slot />
 		<SiteFooter />
+		<script>
+			// Fades marked blocks in as they scroll into view. Only with JS and without reduced motion: the
+			// class goes on <html> here, so without it everything is simply there.
+			const motion = matchMedia("(prefers-reduced-motion: no-preference)");
+			const blocks = document.querySelectorAll<HTMLElement>("[data-reveal]");
+			if (motion.matches && "IntersectionObserver" in window && blocks.length) {
+				document.documentElement.classList.add("reveal-on");
+				const observer = new IntersectionObserver(
+					(entries) => {
+						for (const entry of entries) {
+							if (!entry.isIntersecting) continue;
+							entry.target.classList.add("is-in");
+							observer.unobserve(entry.target);
+						}
+					},
+					{ rootMargin: "0px 0px -8% 0px" },
+				);
+				blocks.forEach((block) => observer.observe(block));
+			}
+		</script>
 	</body>
 </html>
 
@@ -67,6 +87,34 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 	}
 	html {
 		scroll-padding-top: 5rem;
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		html {
+			scroll-behavior: smooth;
+		}
+		/* Same-site page loads cross-fade where the browser supports it; elsewhere nothing changes. */
+		@view-transition {
+			navigation: auto;
+		}
+		/* An animation, not a transition, so it leaves the blocks' own hover transitions alone. */
+		.reveal-on [data-reveal]:not(.is-in) {
+			opacity: 0;
+		}
+		.reveal-on [data-reveal].is-in {
+			animation: reveal 0.6s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+			/* Siblings set --i to come in one after another. */
+			animation-delay: calc(var(--i, 0) * 80ms);
+		}
+	}
+	@keyframes reveal {
+		from {
+			opacity: 0;
+			transform: translateY(1rem);
+		}
+	}
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation-duration: 0.2s;
 	}
 	body {
 		margin: 0;
@@ -128,6 +176,14 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 		font-weight: 600;
 		text-decoration: none;
 		white-space: nowrap;
+		transition:
+			background-color 0.15s,
+			border-color 0.15s,
+			color 0.15s,
+			transform 0.1s;
+	}
+	.button:active {
+		transform: translateY(1px) scale(0.98);
 	}
 	.button:hover {
 		background: color-mix(in srgb, var(--accent) 85%, var(--ink));

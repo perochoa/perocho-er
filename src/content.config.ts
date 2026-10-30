@@ -10,6 +10,15 @@ const services = defineCollection({
 		// Free text, not a number: prices carry bundles and per-unit deals ("$70, or $100 with...").
 		// Leave it unset to show "Message us for a quote".
 		price: z.string().optional(),
+		// Per-item pricing for the card's price calculator. Keep it in line with `price`.
+		perItem: z
+			.object({
+				item: z.string(),
+				price: z.number(),
+				bulkPrice: z.number(),
+				bulkFrom: z.number(),
+			})
+			.optional(),
 	}),
 });
 

@@ -10,6 +10,7 @@ const options = {
 	slotMinutes: 60,
 	leadHours: 2,
 	daysAhead: 1,
+	timeZone: "America/Toronto",
 };
 
 const event = (start: string, end: string, extra: Partial<CalendarEvent> = {}) => ({
@@ -55,9 +56,35 @@ test("the blocks themselves don't block, even when shown as busy", () => {
 	]);
 });
 
-test("all-day and declined Available blocks don't offer anything", () => {
-	const events = [available("00:00", "23:59", { allDay: true }), available("09:00", "12:00", { declined: true })];
-	assert.deepEqual(starts([events]), []);
+test("declined Available blocks don't offer anything", () => {
+	assert.deepEqual(starts([[available("09:00", "12:00", { declined: true })]]), []);
+});
+
+// An all-day event as Google gives it: dates at midnight UTC, the end the day after the last.
+const allDay = (from: string, to: string, extra: Partial<CalendarEvent> = {}) =>
+	event("00:00", "00:00", { start: Date.parse(from), end: Date.parse(to), allDay: true, available: true, transparent: true, ...extra });
+
+test("an all-day Available block offers 9 a.m. to 7 p.m. in the worker's zone", () => {
+	const times = starts([[allDay("2026-11-02", "2026-11-03")]]).map(([start]) => start);
+	assert.equal(times.length, 10);
+	assert.equal(times[0], "2026-11-02T14:00:00.000Z"); // 9:00 EST
+	assert.equal(times.at(-1), "2026-11-02T23:00:00.000Z"); // 18:00, the last that ends by 19:00
+	assert.deepEqual(starts([[allDay("2026-11-02", "2026-11-03", { declined: true })]]), []);
+});
+
+test("an all-day Available block over several days offers each day, across a clock change", () => {
+	// Toronto leaves daylight time early on Sunday 1 November.
+	const times = starts([[allDay("2026-10-31", "2026-11-02")]], { now: Date.parse("2026-10-31T00:00:00-04:00"), daysAhead: 3 }).map(([start]) => start);
+	assert.equal(times.length, 20);
+	assert.equal(times[0], "2026-10-31T13:00:00.000Z"); // 9:00 EDT
+	assert.equal(times[10], "2026-11-01T14:00:00.000Z"); // 9:00 EST
+});
+
+test("events still block inside an all-day Available block", () => {
+	const times = starts([[allDay("2026-11-02", "2026-11-03"), event("12:00", "14:00") /* Class */]]).map(([start]) => start);
+	assert.equal(times.length, 8);
+	assert.ok(!times.includes("2026-11-02T17:00:00.000Z"));
+	assert.ok(!times.includes("2026-11-02T18:00:00.000Z"));
 });
 
 test("events inside a block take out the slots they overlap", () => {

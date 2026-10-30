@@ -18,8 +18,8 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   event whose title starts with `Available` (e.g. `Available`, `Available - shop`) for each
   stretch you can be there for drop-offs; a repeating event works. Times are on the quarter
   hour inside the block: 13:00-14:00 offers 13:00, 13:15, 13:30 and 13:45, and 13:05-14:00 starts
-  at 13:15. All-day blocks don't count. Delete or shorten a block to stop
-  offering that time.
+  at 13:15. An all-day `Available` event counts as 9 a.m. to 7 p.m. on each day it covers.
+  Delete or shorten a block to stop offering that time.
 - **Any number of customers can pick the same time.** Requests and repairs never take a time
   away from anyone else: their events on your calendar are set to "Free".
 - **Your other events still block times inside a block.** All-day events, events set to "Free"

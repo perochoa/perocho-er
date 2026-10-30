@@ -37,7 +37,7 @@ export function getStaticPaths() {
 const { title, text, retry } = Astro.props;
 ---
 
-<MessagePage eyebrow="Request a repair" title={title} text={text}>
+<MessagePage eyebrow="Request a repair" title={title} text={text} mark={retry ? "drift" : "done"}>
 	{retry && <a class="button" href="/request/">Back to the form</a>}
 	<a class={retry ? "button secondary" : "button"} href={retry ? site.messengerUrl : "/"}>
 		{retry ? "Message us" : "Go to the home page"}

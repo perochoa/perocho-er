@@ -3,7 +3,9 @@ import { Image } from "astro:assets";
 import { getCollection, render } from "astro:content";
 import HeroScene from "../components/HeroScene.astro";
 import Joystick from "../components/Joystick.astro";
+import Rosette from "../components/Rosette.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { marketplace } from "../reviews";
 import { site } from "../site";
 
 const services = (await getCollection("services")).sort((a, b) => a.data.order - b.data.order);
@@ -19,6 +21,7 @@ const renderedRepairs = await Promise.all(
 );
 
 const monthFormat = new Intl.DateTimeFormat("en-CA", { month: "long", year: "numeric" });
+const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", dateStyle: "long" });
 
 // Only facts the site already states elsewhere; nothing invented. The rating is in the hero.
 const facts = [
@@ -60,7 +63,7 @@ const steps = site.intakeUrl
 		<section class="hero">
 			<HeroScene />
 			<div class="wrap hero-grid">
-				<div>
+				<div class="intro">
 					<p class="eyebrow">Family-run · Drop-off in Mississauga</p>
 					<h1>{site.tagline}</h1>
 					<p class="lede">{site.intro}</p>
@@ -81,10 +84,18 @@ const steps = site.intakeUrl
 					</div>
 					{
 						site.marketplace && (
-							<a class="rating" href={site.marketplace.url}>
-								<span class="stars" aria-hidden="true">{"★".repeat(site.marketplace.stars)}</span>
-								{site.marketplace.stars} stars from {site.marketplace.ratings} ratings on Facebook
-								Marketplace
+							<a class="rating" href="#reviews">
+								{marketplace.highlyRated && (
+									<span class="badge">
+										<Rosette />
+										Highly rated on Facebook Marketplace
+									</span>
+								)}
+								<span>
+									<span class="stars" aria-hidden="true">{"★".repeat(site.marketplace.stars)}</span>{" "}
+									{site.marketplace.stars} stars from {site.marketplace.ratings} ratings
+									{!marketplace.highlyRated && " on Facebook Marketplace"}
+								</span>
 							</a>
 						)
 					}
@@ -97,8 +108,8 @@ const steps = site.intakeUrl
 		<section class="facts" aria-label="At a glance">
 			<ul class="wrap fact-grid">
 				{
-					facts.map((fact) => (
-						<li>
+					facts.map((fact, i) => (
+						<li data-reveal style={`--i: ${i}`}>
 							<strong>{fact.value}</strong>
 							<span>{fact.label}</span>
 						</li>
@@ -109,17 +120,51 @@ const steps = site.intakeUrl
 
 		<section id="services" class="band" aria-labelledby="services-title">
 			<div class="wrap">
-				<p class="eyebrow">Services</p>
-				<h2 id="services-title">What we fix</h2>
+				<div data-reveal>
+					<p class="eyebrow">Services</p>
+					<h2 id="services-title">What we fix</h2>
+				</div>
 				<ul class="cards">
 					{
-						renderedServices.map(({ data, Content }) => (
-							<li class="card">
+						renderedServices.map(({ id, data, Content }, i) => (
+							<li class="card" data-reveal style={`--i: ${i}`}>
 								<h3>{data.title}</h3>
 								<div class="body">
 									<Content />
 								</div>
+								{data.perItem && (
+									<div
+										class="calc"
+										data-price={data.perItem.price}
+										data-bulk-price={data.perItem.bulkPrice}
+										data-bulk-from={data.perItem.bulkFrom}
+										data-item={data.perItem.item}
+										hidden
+									>
+										<span class="calc-label" id={`calc-${id}`}>
+											How many {data.perItem.item}s?
+										</span>
+										<div class="stepper" role="group" aria-labelledby={`calc-${id}`}>
+											<button type="button" data-step="-1" aria-label={`One ${data.perItem.item} fewer`}>
+												−
+											</button>
+											<output data-count>2</output>
+											<button type="button" data-step="1" aria-label={`One ${data.perItem.item} more`}>
+												+
+											</button>
+										</div>
+										<p class="calc-total" aria-live="polite">
+											<strong data-total />
+											<span data-note />
+										</p>
+									</div>
+								)}
 								<p class="price">{data.price ?? "Message us for a quote"}</p>
+								{site.intakeUrl && (
+									<a class="ask" href={`/request/?service=${id}`}>
+										Request this repair <span aria-hidden="true">→</span>
+									</a>
+								)}
 							</li>
 						))
 					}
@@ -127,14 +172,91 @@ const steps = site.intakeUrl
 			</div>
 		</section>
 
-		<section id="how" class="band alt" aria-labelledby="how-title">
+		{
+			site.marketplace && (
+				<section id="reviews" class="band alt" aria-labelledby="reviews-title">
+					<div class="wrap">
+						<div data-reveal>
+							<p class="eyebrow">Reviews</p>
+							<h2 id="reviews-title">What customers say</h2>
+						</div>
+						<div class="reviews">
+							<div class="summary" data-reveal>
+								<p class="score">
+									<strong>{site.marketplace.stars.toFixed(1)}</strong>
+									<span>
+										<span class="stars" aria-hidden="true">{"★".repeat(site.marketplace.stars)}</span>
+										<span>{site.marketplace.ratings} ratings on Facebook Marketplace</span>
+									</span>
+								</p>
+								{marketplace.highlyRated && (
+									<p class="badge big">
+										<Rosette />
+										<span>
+											<strong>Highly rated</strong>
+											<span>4.5 stars or higher from at least 5 buyers</span>
+										</span>
+									</p>
+								)}
+								<h3>What customers pointed out</h3>
+								<ul class="strengths">
+									{marketplace.strengths.map(({ label, count }, i) => (
+										<li style={`--share: ${count / site.marketplace!.ratings}; --i: ${i}`}>
+											<span>{label}</span>
+											<span class="count">{count}</span>
+											<span class="bar" aria-hidden="true" />
+										</li>
+									))}
+								</ul>
+								<a class="ask" href={site.marketplace.url}>
+									See the profile on Marketplace <span aria-hidden="true">→</span>
+								</a>
+							</div>
+							<ul class="quotes">
+								{marketplace.reviews.map((review, i) => (
+									<li class="card quote" data-reveal style={`--i: ${i + 1}`}>
+										<figure>
+											<p class="stars" aria-label={`${review.stars} out of 5 stars`}>
+												{"★".repeat(review.stars)}
+											</p>
+											<blockquote>
+												<p>{review.text}</p>
+											</blockquote>
+											<figcaption>
+												<span class="avatar" aria-hidden="true">{review.name[0]}</span>
+												<span>
+													<strong>{review.name}</strong>
+													<time datetime={review.date}>{dayFormat.format(new Date(review.date))}</time>
+												</span>
+											</figcaption>
+										</figure>
+										<ul class="tags" aria-label="Pointed out">
+											{review.notable.map((tag) => <li>{tag}</li>)}
+										</ul>
+										{/* Marketplace has no link to a single review; the profile lists them under "Reviews of". */}
+										<a class="source" href={site.marketplace!.url}>
+											<span class="visually-hidden">{review.name}'s review </span>On Facebook Marketplace{" "}
+											<span aria-hidden="true">↗</span>
+										</a>
+									</li>
+								))}
+							</ul>
+						</div>
+					</div>
+				</section>
+			)
+		}
+
+		<section id="how" class="band" aria-labelledby="how-title">
 			<div class="wrap">
-				<p class="eyebrow">How it works</p>
-				<h2 id="how-title">From request to pickup</h2>
+				<div data-reveal>
+					<p class="eyebrow">How it works</p>
+					<h2 id="how-title">From request to pickup</h2>
+				</div>
 				<ol class="steps">
 					{
-						steps.map((step) => (
-							<li>
+						steps.map((step, i) => (
+							<li data-reveal style={`--i: ${i}`}>
 								<h3>{step.title}</h3>
 								<p>{step.text}</p>
 							</li>
@@ -143,7 +265,7 @@ const steps = site.intakeUrl
 				</ol>
 				{
 					site.intakeUrl && (
-						<p class="next">
+						<p class="next" data-reveal>
 							<a class="button" href="/request/">Request a repair</a>
 							<span>
 								Questions first? <a href={site.messengerUrl}>Message us</a>.
@@ -161,8 +283,8 @@ const steps = site.intakeUrl
 						<p class="eyebrow">Past repairs</p>
 						<h2 id="repairs-title">Before and after</h2>
 						<ul class="cards">
-							{renderedRepairs.map(({ data, Content }) => (
-								<li class="card">
+							{renderedRepairs.map(({ data, Content }, i) => (
+								<li class="card" data-reveal style={`--i: ${i}`}>
 									<h3>{data.title}</h3>
 									<p class="meta">
 										{data.device} · <time datetime={data.date.toISOString()}>{monthFormat.format(data.date)}</time>
@@ -188,7 +310,7 @@ const steps = site.intakeUrl
 
 		<section id="contact" class="band" aria-labelledby="contact-title">
 			<div class="wrap">
-				<div class="contact">
+				<div class="contact" data-reveal>
 					<div>
 						<p class="eyebrow">Contact</p>
 						<h2 id="contact-title">Tell us what's wrong</h2>
@@ -221,40 +343,117 @@ const steps = site.intakeUrl
 							<a class={site.intakeUrl ? "button secondary" : "button"} href={site.messengerUrl}>
 								Message us
 							</a>
-							<a class="button secondary" href={`mailto:${site.email}`}>Email us</a>
+							<span class="email">
+								<a class="button secondary" href={`mailto:${site.email}`}>Email us</a>
+								<button class="button secondary copy" type="button" data-copy={site.email} aria-label="Copy email address" hidden>
+									<svg viewBox="0 0 24 24" aria-hidden="true">
+										<g class="clip">
+											<rect x="8" y="8" width="12" height="12" rx="2" />
+											<path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+										</g>
+										<path class="tick" d="M5 12.5l4.5 4.5L19 7.5" />
+									</svg>
+								</button>
+							</span>
 						</div>
+						<p class="copied" data-copy-status aria-live="polite"></p>
 					</div>
-					<div class="details">
-						<h3>For a faster quote, tell us</h3>
-						<ul class="checklist">
-							<li>the device and its model</li>
-							<li>what's wrong with it</li>
-							<li>a photo, if you're messaging us</li>
-						</ul>
-						{
-							(site.serviceArea || site.hours) && (
-								<dl>
-									{site.serviceArea && (
-										<div>
-											<dt>Where</dt>
-											<dd>{site.serviceArea}</dd>
-										</div>
-									)}
-									{site.hours && (
-										<div>
-											<dt>When</dt>
-											<dd>{site.hours}</dd>
-										</div>
-									)}
-								</dl>
-							)
-						}
-					</div>
+					{
+						(site.serviceArea || site.hours) && (
+							<dl class="details">
+								{site.serviceArea && (
+									<div>
+										<dt>Where</dt>
+										<dd>{site.serviceArea}</dd>
+									</div>
+								)}
+								{site.hours && (
+									<div>
+										<dt>When</dt>
+										<dd>{site.hours}</dd>
+									</div>
+								)}
+							</dl>
+						)
+					}
 				</div>
 			</div>
 		</section>
 	</main>
 </BaseLayout>
+
+<script>
+	// Price calculator on cards whose service is priced per item (the stick drift fix).
+	const money = (n: number) => `$${n}`;
+	document.querySelectorAll<HTMLElement>(".calc").forEach((calc) => {
+		const price = Number(calc.dataset.price);
+		const bulkPrice = Number(calc.dataset.bulkPrice);
+		const bulkFrom = Number(calc.dataset.bulkFrom);
+		const item = calc.dataset.item!;
+		const output = calc.querySelector<HTMLOutputElement>("[data-count]")!;
+		const total = calc.querySelector<HTMLElement>("[data-total]")!;
+		const note = calc.querySelector<HTMLElement>("[data-note]")!;
+		const minus = calc.querySelector<HTMLButtonElement>('[data-step="-1"]')!;
+		const MAX = 12;
+		let count = 2;
+
+		const render = () => {
+			const each = count >= bulkFrom ? bulkPrice : price;
+			output.textContent = String(count);
+			total.textContent = money(count * each);
+			const more = bulkFrom - count;
+			note.textContent =
+				more > 0
+					? ` · ${more} more ${more === 1 ? item : `${item}s`} and they're ${money(bulkPrice)} each`
+					: ` · ${money(each)} each, you save ${money(count * (price - bulkPrice))}`;
+			minus.disabled = count <= 1;
+			total.classList.remove("bump");
+			// Restart the animation on every change.
+			void total.offsetWidth;
+			total.classList.add("bump");
+		};
+
+		calc.addEventListener("click", (event) => {
+			const step = (event.target as Element).closest<HTMLButtonElement>("[data-step]");
+			if (!step) return;
+			count = Math.min(MAX, Math.max(1, count + Number(step.dataset.step)));
+			render();
+		});
+		calc.hidden = false;
+		render();
+	});
+
+	// A pointer-following glow on cards.
+	document.querySelectorAll<HTMLElement>(".card").forEach((card) => {
+		card.addEventListener("pointermove", (event) => {
+			const rect = card.getBoundingClientRect();
+			card.style.setProperty("--x", `${event.clientX - rect.left}px`);
+			card.style.setProperty("--y", `${event.clientY - rect.top}px`);
+		});
+	});
+
+	// Copy-email, for desktops without a mail app.
+	document.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((button) => {
+		if (!navigator.clipboard) return;
+		const status = button.closest(".contact")?.querySelector<HTMLElement>("[data-copy-status]");
+		let timer = 0;
+		button.hidden = false;
+		button.addEventListener("click", async () => {
+			try {
+				await navigator.clipboard.writeText(button.dataset.copy!);
+				button.classList.add("is-copied");
+				if (status) status.textContent = `Copied ${button.dataset.copy} to the clipboard.`;
+			} catch {
+				if (status) status.textContent = "Couldn't copy the email address.";
+			}
+			clearTimeout(timer);
+			timer = window.setTimeout(() => {
+				button.classList.remove("is-copied");
+				if (status) status.textContent = "";
+			}, 2000);
+		});
+	});
+</script>
 
 <style>
 	/* Hero */
@@ -274,6 +473,30 @@ const steps = site.intakeUrl
 	}
 	h1 {
 		margin: 0;
+	}
+	/* The intro rises in on load, one line after another. */
+	@media (prefers-reduced-motion: no-preference) {
+		.intro > * {
+			animation: rise 0.7s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+		}
+		.intro > :nth-child(2) {
+			animation-delay: 0.08s;
+		}
+		.intro > :nth-child(3) {
+			animation-delay: 0.16s;
+		}
+		.intro > :nth-child(4) {
+			animation-delay: 0.24s;
+		}
+		.intro > :nth-child(5) {
+			animation-delay: 0.32s;
+		}
+	}
+	@keyframes rise {
+		from {
+			opacity: 0;
+			transform: translateY(0.75rem);
+		}
 	}
 	.lede {
 		margin: 1.25rem 0 0;
@@ -303,6 +526,255 @@ const steps = site.intakeUrl
 	.stars {
 		color: var(--accent);
 		letter-spacing: 0.1em;
+	}
+	.rating {
+		flex-direction: column;
+		align-items: flex-start;
+	}
+	.badge {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.5rem;
+		padding: 0.25rem 0.75rem 0.25rem 0.375rem;
+		border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+		color: var(--ink);
+		font-weight: 600;
+		font-size: 0.875rem;
+		transition:
+			border-color 0.2s,
+			background-color 0.2s,
+			translate 0.2s;
+	}
+	.badge :global(svg) {
+		width: 1.5rem;
+		height: 1.5rem;
+		flex: none;
+	}
+	/* On hover the badge firms up in the accent, its rosette pops out with a turn and the stars
+	   spread out with a glow. Eased out with no overshoot, and held while hovered. */
+	.rating:hover .badge,
+	.rating:focus-visible .badge {
+		border-color: var(--accent);
+		background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.rating .badge :global(svg) {
+			transition: transform 0.5s cubic-bezier(0.2, 0.7, 0.2, 1);
+		}
+		.rating:hover .badge :global(svg),
+		.rating:focus-visible .badge :global(svg) {
+			transform: rotate(1turn) scale(1.2);
+		}
+		.rating .stars {
+			transition:
+				letter-spacing 0.35s cubic-bezier(0.2, 0.7, 0.2, 1),
+				filter 0.35s;
+		}
+		.rating:hover .stars,
+		.rating:focus-visible .stars {
+			letter-spacing: 0.2em;
+			filter: drop-shadow(0 0 4px var(--accent));
+		}
+	}
+
+	/* Reviews */
+	.reviews {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr);
+		gap: 1.5rem;
+		align-items: start;
+	}
+	.summary {
+		display: grid;
+		gap: 1.25rem;
+		padding: 1.5rem;
+		border-radius: 0.75rem;
+		background: var(--bg);
+		border: 1px solid var(--line);
+	}
+	.summary > * {
+		margin: 0;
+	}
+	.score {
+		display: flex;
+		align-items: center;
+		gap: 1rem;
+	}
+	.score > strong {
+		font-family: var(--font-mono);
+		font-size: 3rem;
+		font-weight: 500;
+		line-height: 1;
+		color: var(--ink);
+	}
+	.score > span {
+		display: grid;
+		color: var(--muted);
+		font-size: 0.9375rem;
+	}
+	.score .stars {
+		font-size: 1.25rem;
+	}
+	.badge.big {
+		gap: 0.75rem;
+		padding: 0.625rem 1rem 0.625rem 0.625rem;
+		border-radius: 0.75rem;
+		font-weight: 400;
+	}
+	.badge.big :global(svg) {
+		width: 2.25rem;
+		height: 2.25rem;
+	}
+	.badge.big > span {
+		display: grid;
+		color: var(--muted);
+	}
+	.badge.big strong {
+		color: var(--ink);
+		font-size: 1rem;
+	}
+	.summary h3 {
+		margin-bottom: -0.5rem;
+		font-size: 0.9375rem;
+	}
+	.strengths {
+		display: grid;
+		gap: 0.75rem;
+		padding: 0;
+		list-style: none;
+	}
+	.strengths li {
+		display: grid;
+		grid-template-columns: 1fr auto;
+		gap: 0.25rem;
+		font-size: 0.9375rem;
+	}
+	.count {
+		font-family: var(--font-mono);
+		color: var(--muted);
+	}
+	.bar {
+		grid-column: 1 / -1;
+		height: 0.375rem;
+		border-radius: 999px;
+		background: var(--line);
+		overflow: hidden;
+	}
+	.bar::before {
+		content: "";
+		display: block;
+		height: 100%;
+		border-radius: inherit;
+		background: var(--accent);
+		transform: scaleX(var(--share));
+		transform-origin: left;
+	}
+	/* The bars fill in once the summary scrolls into view. */
+	@media (prefers-reduced-motion: no-preference) {
+		.bar::before {
+			transition: transform 0.9s cubic-bezier(0.2, 0.7, 0.2, 1) calc(var(--i, 0) * 100ms + 0.2s);
+		}
+		:global(.reveal-on) .summary:not(:global(.is-in)) .bar::before {
+			transform: scaleX(0);
+		}
+	}
+	.summary .ask {
+		margin-top: 0;
+	}
+	.quotes {
+		display: grid;
+		gap: 1rem;
+		margin: 0;
+		padding: 0;
+		list-style: none;
+	}
+	.quote figure {
+		margin: 0;
+	}
+	.quote .stars {
+		margin: 0;
+		font-size: 0.9375rem;
+	}
+	.quote blockquote {
+		margin: 0.5rem 0 1rem;
+		font-size: 1.0625rem;
+	}
+	.quote blockquote p {
+		margin: 0;
+	}
+	.quote blockquote p::before {
+		content: "“";
+	}
+	.quote blockquote p::after {
+		content: "”";
+	}
+	.quote figcaption {
+		display: flex;
+		align-items: center;
+		gap: 0.75rem;
+	}
+	.quote figcaption > span:last-child {
+		display: grid;
+		font-size: 0.875rem;
+	}
+	.quote time {
+		color: var(--muted);
+	}
+	.avatar {
+		display: grid;
+		place-items: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		border-radius: 50%;
+		background: color-mix(in srgb, var(--accent) 15%, var(--surface));
+		color: var(--accent);
+		font-weight: 700;
+	}
+	.tags {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 0.375rem;
+		margin: 1rem 0 0;
+		padding: 0;
+		list-style: none;
+	}
+	.source {
+		display: inline-flex;
+		gap: 0.25rem;
+		margin-top: 1rem;
+		color: var(--muted);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		text-decoration: none;
+		transition: color 0.15s;
+	}
+	.source:hover,
+	.source:focus-visible {
+		color: var(--accent);
+	}
+	.source span[aria-hidden] {
+		transition: transform 0.2s;
+	}
+	.source:hover span[aria-hidden] {
+		transform: translate(2px, -2px);
+	}
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	.tags li {
+		padding: 0.125rem 0.625rem;
+		border-radius: 999px;
+		background: color-mix(in srgb, var(--accent) 9%, transparent);
+		color: var(--accent);
+		font-size: 0.8125rem;
+		font-weight: 600;
 	}
 
 	/* Facts strip */
@@ -359,16 +831,47 @@ const steps = site.intakeUrl
 		list-style: none;
 	}
 	.card {
+		position: relative;
 		display: flex;
 		flex-direction: column;
 		padding: 1.5rem;
 		background: var(--surface);
 		border: 1px solid var(--line);
 		border-radius: 0.75rem;
-		transition: border-color 0.15s;
+		transition:
+			border-color 0.15s,
+			box-shadow 0.25s,
+			translate 0.25s;
+	}
+	/* A soft glow that follows the pointer (--x, --y are set by the script). */
+	.card::before {
+		content: "";
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		background: radial-gradient(
+			18rem circle at var(--x, 50%) var(--y, 0%),
+			color-mix(in srgb, var(--accent) 9%, transparent),
+			transparent 70%
+		);
+		opacity: 0;
+		transition: opacity 0.25s;
+		pointer-events: none;
+	}
+	.card > :global(*) {
+		position: relative;
 	}
 	.card:hover {
 		border-color: color-mix(in srgb, var(--accent) 50%, var(--line));
+		box-shadow: 0 14px 32px -20px color-mix(in srgb, var(--accent) 60%, transparent);
+	}
+	.card:hover::before {
+		opacity: 1;
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.card:hover {
+			translate: 0 -3px;
+		}
 	}
 	.card h3 {
 		margin: 0 0 0.75rem;
@@ -393,6 +896,100 @@ const steps = site.intakeUrl
 		font-family: var(--font-mono);
 		font-weight: 500;
 		color: var(--accent);
+	}
+	.ask {
+		align-self: flex-start;
+		margin-top: 0.75rem;
+		font-weight: 600;
+		font-size: 0.9375rem;
+		text-decoration: none;
+	}
+	.ask span {
+		display: inline-block;
+		transition: transform 0.2s;
+	}
+	.ask:hover span,
+	.ask:focus-visible span {
+		transform: translateX(4px);
+	}
+
+	/* Price calculator */
+	.calc {
+		display: grid;
+		grid-template-columns: auto auto;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem 1rem;
+		margin-top: 1.25rem;
+		padding: 0.875rem 1rem;
+		border-radius: 0.625rem;
+		background: color-mix(in srgb, var(--accent) 7%, var(--bg));
+		border: 1px solid color-mix(in srgb, var(--accent) 20%, var(--line));
+	}
+	.calc[hidden] {
+		display: none;
+	}
+	.calc-label {
+		font-weight: 600;
+		font-size: 0.9375rem;
+	}
+	.stepper {
+		display: flex;
+		align-items: center;
+		border: 1px solid var(--line);
+		border-radius: 999px;
+		background: var(--surface);
+	}
+	.stepper button {
+		width: 2.25rem;
+		height: 2.25rem;
+		border: 0;
+		border-radius: 50%;
+		background: none;
+		color: var(--accent);
+		font: inherit;
+		font-size: 1.25rem;
+		line-height: 1;
+		cursor: pointer;
+		transition: background-color 0.15s;
+	}
+	.stepper button:hover:not(:disabled) {
+		background: color-mix(in srgb, var(--accent) 12%, transparent);
+	}
+	.stepper button:disabled {
+		color: var(--muted);
+		opacity: 0.5;
+		cursor: default;
+	}
+	.stepper output {
+		min-width: 2ch;
+		font-family: var(--font-mono);
+		font-weight: 500;
+		text-align: center;
+	}
+	.calc-total {
+		grid-column: 1 / -1;
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.875rem;
+	}
+	.calc-total strong {
+		display: inline-block;
+		font-family: var(--font-mono);
+		font-size: 1.25rem;
+		font-weight: 500;
+		color: var(--ink);
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.calc-total :global(.bump) {
+			animation: bump 0.3s ease-out;
+		}
+	}
+	@keyframes bump {
+		40% {
+			transform: scale(1.15);
+			color: var(--accent);
+		}
 	}
 
 	/* Steps */
@@ -434,6 +1031,24 @@ const steps = site.intakeUrl
 		left: 3.25rem;
 		right: -0.75rem;
 		border-top: 2px dashed var(--line);
+	}
+	@media (prefers-reduced-motion: no-preference) {
+		.steps li::after {
+			transform-origin: left;
+			transition: transform 0.6s ease-out calc(var(--i, 0) * 80ms + 0.3s);
+		}
+		:global(.reveal-on) .steps li:not(:global(.is-in))::after {
+			transform: scaleX(0);
+		}
+		.steps li::before {
+			transition: transform 0.4s cubic-bezier(0.3, 1.6, 0.5, 1) calc(var(--i, 0) * 80ms);
+		}
+		:global(.reveal-on) .steps li:not(:global(.is-in))::before {
+			transform: scale(0.4);
+		}
+		.steps li:hover::before {
+			transform: scale(1.1);
+		}
 	}
 	.steps h3 {
 		margin: 0 0 0.375rem;
@@ -486,43 +1101,76 @@ const steps = site.intakeUrl
 	.contact .actions {
 		margin-top: 1.5rem;
 	}
+	/* "Email us" and the copy button read as one split button. */
+	.email {
+		display: inline-flex;
+	}
+	.email > .button:first-child:not(:only-child) {
+		border-top-right-radius: 0;
+		border-bottom-right-radius: 0;
+	}
+	.email .button {
+		flex: 1;
+	}
+	.copy {
+		margin-left: -1px;
+		padding-inline: 0.75rem;
+		border-top-left-radius: 0;
+		border-bottom-left-radius: 0;
+		font: inherit;
+		cursor: pointer;
+	}
+	.copy[hidden] {
+		display: none;
+	}
+	.copy svg {
+		width: 1.125rem;
+		height: 1.125rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 2;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+	.copy .clip,
+	.copy .tick {
+		transition:
+			opacity 0.2s,
+			transform 0.2s;
+		transform-origin: center;
+	}
+	.copy .tick {
+		opacity: 0;
+		transform: scale(0.5);
+	}
+	.copy.is-copied {
+		border-color: var(--accent);
+		color: var(--accent);
+	}
+	.copy.is-copied .clip {
+		opacity: 0;
+		transform: scale(0.5);
+	}
+	.copy.is-copied .tick {
+		opacity: 1;
+		transform: none;
+	}
+	.copied {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+	}
 	.details {
+		display: grid;
+		align-content: start;
+		gap: 0.75rem;
+		margin: 0;
 		padding: 1.5rem;
 		border-radius: 0.75rem;
 		background: var(--surface);
 		border: 1px solid var(--line);
-	}
-	.details h3 {
-		margin: 0 0 0.75rem;
-	}
-	.checklist {
-		margin: 0;
-		padding: 0;
-		list-style: none;
-	}
-	.checklist li {
-		position: relative;
-		padding-left: 1.75rem;
-	}
-	.checklist li + li {
-		margin-top: 0.375rem;
-	}
-	.checklist li::before {
-		content: "";
-		position: absolute;
-		left: 0.25rem;
-		top: 0.45em;
-		width: 0.625rem;
-		height: 0.625rem;
-		border-radius: 50%;
-		background: var(--accent);
-	}
-	dl {
-		display: grid;
-		gap: 0.75rem;
-		margin: 1.25rem 0 0;
-		padding-top: 1.25rem;
-		border-top: 1px solid var(--line);
 	}
 	dt {
 		font-family: var(--font-mono);
@@ -547,7 +1195,8 @@ const steps = site.intakeUrl
 	}
 	@media (max-width: 48rem) {
 		.hero-grid,
-		.contact {
+		.contact,
+		.reviews {
 			grid-template-columns: minmax(0, 1fr);
 		}
 		.hero-grid {
@@ -573,8 +1222,12 @@ const steps = site.intakeUrl
 			border-left: 0;
 			border-top: 1px solid var(--line);
 		}
-		.actions .button {
+		.actions .button,
+		.actions .email {
 			flex: 1;
+		}
+		.actions .copy {
+			flex: none;
 		}
 	}
 </style>
