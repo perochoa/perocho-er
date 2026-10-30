@@ -12,8 +12,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { sendMail } from "../src/fastmail.ts";
 import { accessToken, listEvents } from "../src/google.ts";
-import { parseTechs, type Tech } from "../src/index.ts";
 import { openSlots } from "../src/slots.ts";
+import { parseTechs, type Tech } from "../src/techs.ts";
 
 const { values: args } = parseArgs({
 	options: {
@@ -44,7 +44,6 @@ const fail = (message: string) => {
 
 // Loose on purpose: catches typos and calendar IDs used as addresses, not every invalid address.
 const looksLikeEmail = (address: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address);
-const emailOf = (tech: Tech) => tech.email ?? tech.calendarId;
 
 function readTechs(): Tech[] | null {
 	const raw = process.env.TECHS ?? readFileSync(args.techs ?? "techs.json", "utf8");
@@ -61,10 +60,10 @@ function checkList(techs: Tech[]) {
 	const repeated = (values: string[]) => [...new Set(values.filter((v, i) => values.indexOf(v) !== i))];
 	for (const name of repeated(techs.map((t) => t.name.trim().toLowerCase()))) fail(`"${name}" is listed more than once`);
 	for (const id of repeated(techs.map((t) => t.calendarId.toLowerCase()))) fail(`calendar ${id} is listed more than once`);
-	for (const email of repeated(techs.map((t) => emailOf(t).toLowerCase()))) warn(`${email} gets more than one tech's requests`);
+	for (const email of repeated(techs.map((t) => t.email.toLowerCase()))) warn(`${email} gets more than one tech's requests`);
 	for (const tech of techs) {
 		if (!tech.name.trim()) fail(`a tech with calendar ${tech.calendarId} has no name`);
-		const email = emailOf(tech);
+		const { email } = tech;
 		if (/calendar\.google\.com$/i.test(email)) {
 			fail(`${tech.name}: requests would go to the calendar ID ${email}, which can't get mail; add an "email"`);
 		} else if (!looksLikeEmail(email)) {
@@ -75,7 +74,7 @@ function checkList(techs: Tech[]) {
 
 // The worker reads events and writes holds, so the service account needs "Make changes to events".
 async function checkCalendar(token: string, tech: Tech, now: number) {
-	console.log(`${tech.name} (calendar ${tech.calendarId}, requests to ${emailOf(tech)})`);
+	console.log(`${tech.name} (calendar ${tech.calendarId}, requests to ${tech.email})`);
 	const query = new URLSearchParams({ maxResults: "1", fields: "accessRole" });
 	const response = await fetch(
 		`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(tech.calendarId)}/events?${query}`,
@@ -122,14 +121,14 @@ async function sendTests(techs: Tech[]) {
 			await sendMail(token, [
 				{
 					from: vars.MAIL_FROM,
-					to: emailOf(tech),
+					to: tech.email,
 					subject: "Test: repair requests will come to this address",
 					text: `Hi ${tech.name},\n\nThis is a test from the repair request form's setup check. Repair requests will be emailed to this address. Nothing to do; you can delete this.\n`,
 				},
 			]);
-			ok(`sent to ${tech.name} at ${emailOf(tech)}; check that it arrived`);
+			ok(`sent to ${tech.name} at ${tech.email}; check that it arrived`);
 		} catch (error) {
-			fail(`${tech.name} at ${emailOf(tech)}: ${(error as Error).message}`);
+			fail(`${tech.name} at ${tech.email}: ${(error as Error).message}`);
 		}
 	}
 }

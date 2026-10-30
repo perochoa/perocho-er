@@ -14,35 +14,9 @@ import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
 import { act, expire, page, queue } from "./offers.ts";
 import { openSlots, type Slot } from "./slots.ts";
+import { parseTechs, type Tech } from "./techs.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
-
-export interface Tech {
-	name: string;
-	calendarId: string;
-	email?: string; // where their requests go; defaults to calendarId
-}
-
-// The secret is a JSON list of techs. Errors name TECHS but never echo it.
-export function parseTechs(raw: string): Tech[] {
-	let techs: unknown;
-	try {
-		techs = JSON.parse(raw);
-	} catch {
-		throw new Error("TECHS is not valid JSON");
-	}
-	const valid =
-		Array.isArray(techs) &&
-		techs.length > 0 &&
-		techs.every(
-			(tech) =>
-				typeof tech?.name === "string" &&
-				typeof tech?.calendarId === "string" &&
-				(tech.email === undefined || typeof tech.email === "string"),
-		);
-	if (!valid) throw new Error("TECHS must be a non-empty array of { name, calendarId, email? } strings");
-	return techs as Tech[];
-}
 
 async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS)) {
 	const options = {
@@ -182,7 +156,7 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 		...offers.map((offer, position) =>
 			db.prepare(
 				"INSERT INTO offers (token, request_id, position, name, email, calendar_id, hold_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			).bind(offer.token, id, position, offer.tech.name, offer.tech.email ?? offer.tech.calendarId, offer.tech.calendarId, offer.holdId),
+			).bind(offer.token, id, position, offer.tech.name, offer.tech.email, offer.tech.calendarId, offer.holdId),
 		),
 	];
 	const holds = offers.filter((offer) => offer.holdId);
@@ -197,7 +171,7 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 	const time = formatTime(slot.start, env.TIME_ZONE);
 	const offered = offers.map((offer) => ({
 		name: offer.tech.name,
-		email: offer.tech.email ?? offer.tech.calendarId,
+		email: offer.tech.email,
 		link: link(offer),
 		held: offer.holdId !== null,
 	}));
