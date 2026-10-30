@@ -225,6 +225,31 @@ export async function act(env: Env, token: string, action: string): Promise<void
 	if (action === "done") await finish(env, loaded);
 }
 
+// What a tech's link says, and the buttons it offers, for where the request stands.
+function view(offer: OfferRow, request: RequestRow, taker: OfferRow | undefined, intake: Intake, time: string): [string, string, string] {
+	const take = '<button name="action" value="confirm">Take it</button>';
+	if (request.status === "confirmed") {
+		if (taker?.token === offer.token) {
+			if (request.done !== null) return ["You finished this repair", "It's out of your queue.", ""];
+			return [
+				"You took this request",
+				"It's yours, and the customer has been told. Agree with them when it'll be ready, and mark it done once it's back with them.",
+				'<button name="action" value="done">Mark done</button>',
+			];
+		}
+		return [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""];
+	}
+	if (request.status === "declined") return ["Every tech declined this request", "The customer has been told.", ""];
+	if (request.status === "expired") return ["This request expired", "Nobody took it in time, and the customer has been told.", ""];
+	if (passed(request)) return ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""];
+	if (offer.declined) return ["You declined this request", "It's still open for the others, so you can take it after all.", take];
+	return [
+		intake.rush ? "New rush repair request" : "New repair request",
+		`Drop-off ${stop(time)} The first tech to take it gets it.`,
+		take + '<button name="action" value="decline">Decline</button>',
+	];
+}
+
 export async function page(env: Env, token: string): Promise<Response> {
 	const loaded = await load(env.DB, token);
 	if (!loaded) return html("Request not found", "<h1>Request not found</h1><p>This link doesn't match a request.</p>", 404);
@@ -232,33 +257,7 @@ export async function page(env: Env, token: string): Promise<Response> {
 	const time = timeOf(env, request);
 	const taker = offers.find((other) => other.token === request.confirmed_by);
 
-	const take = '<button name="action" value="confirm">Take it</button>';
-	const done = '<button name="action" value="done">Mark done</button>';
-	const decline = offer.declined ? "" : '<button name="action" value="decline">Decline</button>';
-	const [title, state, buttons] =
-		request.status === "confirmed"
-			? taker?.token === offer.token
-				? request.done !== null
-					? ["You finished this repair", "It's out of your queue.", ""]
-					: [
-							"You took this request",
-							"It's yours, and the customer has been told. Agree with them when it'll be ready, and mark it done once it's back with them.",
-							done,
-						]
-				: [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""]
-			: request.status === "declined"
-				? ["Every tech declined this request", "The customer has been told.", ""]
-				: request.status === "expired"
-					? ["This request expired", "Nobody took it in time, and the customer has been told.", ""]
-					: passed(request)
-						? ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""]
-						: offer.declined
-							? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
-							: [
-									intake.rush ? "New rush repair request" : "New repair request",
-									`Drop-off ${stop(time)} The first tech to take it gets it.`,
-									take + decline,
-								];
+	const [title, state, buttons] = view(offer, request, taker, intake, time);
 
 	// Payment is in person, so the fee is only a reminder.
 	const rush = intake.rush
