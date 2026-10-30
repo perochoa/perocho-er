@@ -1,5 +1,6 @@
 // From the Marketplace profile (site.marketplace.url). Update by hand now and then, with the
-// star rating and count in site.ts. Quotes are word for word: don't tidy them.
+// star rating and count in site.ts. Quotes have spelling, grammar and punctuation fixed, but keep
+// the buyer's words and meaning: don't add claims they didn't make.
 
 interface Review {
 	// First name only, as Marketplace shows it.
@@ -27,14 +28,14 @@ export const marketplace = {
 			date: "2026-10-13",
 			stars: 5,
 			notable: ["Punctuality", "Communication", "Pricing", "Item description"],
-			text: "Amazing work got done for me in a couple hours or even earlier in the same day very helpful five stars",
+			text: "Amazing work, done for me in a couple of hours or even earlier, on the same day. Very helpful. Five stars!",
 		},
 		{
 			name: "Aidan",
 			date: "2026-10-09",
 			stars: 5,
 			notable: ["Communication", "Pricing"],
-			text: "He did a awesome he helped me fix all the problems that it need to be fixed he only charged me $100 for everything and everything works perfectly",
+			text: "He did an awesome job. He helped me fix all the problems that needed to be fixed, he only charged me $100 for everything, and everything works perfectly.",
 		},
 		{
 			name: "Sam",
