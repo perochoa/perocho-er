@@ -37,6 +37,28 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 		<slot />
 		<SiteFooter />
 		<script>
+			import { site } from "../site";
+
+			// On phones, "Message us" opens the Messenger app straight away. If the app doesn't take over
+			// (not installed), the page is still showing after a moment, so fall back to m.me.
+			// iPads report a Mac user agent, so they're told apart by touch.
+			const phone =
+				/iPhone|iPad|iPod|Android/.test(navigator.userAgent) ||
+				(navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+			if (phone) {
+				document.addEventListener("click", (event) => {
+					const link = (event.target as Element).closest?.(`a[href="${site.messengerUrl}"]`);
+					if (!link) return;
+					event.preventDefault();
+					const fallback = setTimeout(() => {
+						if (document.visibilityState === "visible") location.href = site.messengerUrl;
+					}, 1500);
+					addEventListener("pagehide", () => clearTimeout(fallback), { once: true });
+					location.href = site.messengerAppUrl;
+				});
+			}
+		</script>
+		<script>
 			// Fades marked blocks in as they scroll into view. Only with JS and without reduced motion: the
 			// class goes on <html> here, so without it everything is simply there.
 			const motion = matchMedia("(prefers-reduced-motion: no-preference)");

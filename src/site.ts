@@ -7,6 +7,9 @@ interface Site {
 	description: string;
 	email: string;
 	messengerUrl: string;
+	// Opens the chat in the Messenger app. Phones use it first: m.me has no web chat on a phone for a
+	// personal profile, and Safari/Firefox on iOS don't always hand m.me to the app.
+	messengerAppUrl: string;
 	marketplace?: {
 		url: string;
 		// Update by hand from the Marketplace profile now and then.
@@ -29,6 +32,7 @@ export const site: Site = {
 		"Family-run PS5 repairs and upgrades in Mississauga: stick drift fixes, deep cleaning and HDMI port replacement.",
 	email: "repairs@perocho.com",
 	messengerUrl: "https://m.me/richard.perocho",
+	messengerAppUrl: "fb-messenger://user-thread/1786877701",
 	marketplace: {
 		url: "https://www.facebook.com/marketplace/profile/1786877701",
 		stars: 5,
