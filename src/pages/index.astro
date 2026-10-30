@@ -10,6 +10,7 @@ import Steps from "../components/Steps.astro";
 import BaseLayout from "../layouts/BaseLayout.astro";
 import { getServices } from "../services";
 import { site } from "../site";
+import { homeStructuredData } from "../structured-data";
 
 const services = await getServices();
 const repairs = (await getCollection("repairs")).sort(
@@ -17,7 +18,11 @@ const repairs = (await getCollection("repairs")).sort(
 );
 ---
 
-<BaseLayout title={site.name} description={site.description}>
+<BaseLayout
+	title={`${site.name} · PS5 repairs in Mississauga`}
+	description={site.description}
+	structuredData={await homeStructuredData(Astro.site!)}
+>
 	<main>
 		<Hero />
 		<Facts />

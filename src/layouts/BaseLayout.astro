@@ -6,21 +6,26 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
 import revealBeforePaint from "../scripts/reveal-before-paint.js?raw";
+import { site } from "../site";
 
 interface Props {
 	title: string;
 	description: string;
 	// Pages that shouldn't show up in search (form results, 404): no canonical, no og:url.
 	noindex?: boolean;
+	// schema.org JSON-LD for search engines and AI assistants.
+	structuredData?: object;
 }
 
-const { title, description, noindex = false } = Astro.props;
+const { title, description, noindex = false, structuredData } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 // Sharing preview: 1200x630 PNG, as Facebook wants, at an absolute URL.
 const ogImage = new URL("/og-image.png", Astro.site);
 // Astro only hashes the scripts it bundles, so the policy gets this inline one's hash from here.
 const revealHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(revealBeforePaint));
 Astro.csp?.insertScriptHash(`sha256-${btoa(String.fromCharCode(...new Uint8Array(revealHash)))}`);
+// "<" escaped so no text in it can close the <script>. JSON-LD isn't run, so the policy leaves it alone.
+const jsonLd = structuredData && JSON.stringify(structuredData).replaceAll("<", "\\u003c");
 ---
 
 <!doctype html>
@@ -33,7 +38,12 @@ Astro.csp?.insertScriptHash(`sha256-${btoa(String.fromCharCode(...new Uint8Array
 		{noindex ? <meta name="robots" content="noindex" /> : <link rel="canonical" href={canonicalURL} />}
 		<title>{title}</title>
 		<meta name="description" content={description} />
+		<!-- Browser UI in the page's --bg, light and dark. -->
+		<meta name="theme-color" content="#f4f7f7" media="(prefers-color-scheme: light)" />
+		<meta name="theme-color" content="#0e1514" media="(prefers-color-scheme: dark)" />
 		<meta property="og:type" content="website" />
+		<meta property="og:site_name" content={site.name} />
+		<meta property="og:locale" content="en_CA" />
 		{!noindex && <meta property="og:url" content={canonicalURL} />}
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
@@ -43,6 +53,7 @@ Astro.csp?.insertScriptHash(`sha256-${btoa(String.fromCharCode(...new Uint8Array
 		<meta property="og:image:alt" content="Perocho Repairs. PS5 repairs and upgrades: stick drift, overheating and HDMI ports." />
 		<meta name="twitter:card" content="summary_large_image" />
 		<script is:inline set:html={revealBeforePaint} />
+		{jsonLd && <script is:inline type="application/ld+json" set:html={jsonLd} />}
 	</head>
 	<body>
 		<SiteHeader />
