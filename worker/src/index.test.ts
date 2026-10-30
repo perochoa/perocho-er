@@ -526,7 +526,7 @@ test("locks the tech's pages down to their own styles and forms", async () => {
 	for (const link of [sam, `${sam}/queue`, unknown]) {
 		assert.equal(
 			(await offerPage(link)).headers.get("Content-Security-Policy"),
-			"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'",
+			"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
 		);
 	}
 });

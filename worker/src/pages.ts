@@ -2,7 +2,7 @@
 
 // The pages need nothing but their inline styles and forms that post back here. Customer text is
 // escaped too; this is in case something slips through, and keeps the pages out of frames.
-const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'";
+const CSP = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'";
 
 export const escape = (text: string) =>
 	text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
