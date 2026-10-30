@@ -621,6 +621,9 @@ test("declining only takes that tech out, until nobody's left", async () => {
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^We can't take your repair request/);
 	assert.match(await (await offerPage(sam)).text(), /Every tech declined/);
+	const when = text(to("jane@example.com")[0]).match(/Drop-off time: (.*)/)![1];
+	assert.equal(text(to("jane@example.com")[0]), `Hi Jane,\n\nSorry, none of our techs can make ${when} Reply to this email and we'll try to find another time, or send the form again with a different one.\n\nYour request:\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
+	assert.equal(text(to("repairs@perocho.com")[0]), `Every tech declined this request, and the customer has been told.\n\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
 });
 
 test("a tech who declined can still take it while it's open", async () => {
@@ -751,6 +754,9 @@ test("expires a request nobody took once its time starts, and lets the holds go"
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^We couldn't take your repair request/);
 	assert.match(to("repairs@perocho.com")[0].subject, /^Nobody took/);
+	const when = text(to("jane@example.com")[0]).match(/Drop-off time: (.*)/)![1];
+	assert.equal(text(to("jane@example.com")[0]), `Hi Jane,\n\nSorry, none of our techs could confirm ${when} Reply to this email and we'll try to find another time, or send the form again with a different one.\n\nYour request:\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
+	assert.equal(text(to("repairs@perocho.com")[0]), `Nobody took this request in time, so it's closed and the customer has been told.\n\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
 	assert.deepEqual(deleted.map((d) => d.calendarId).sort(), ["richard@example.com", "sam@example.com"]);
 	assert.deepEqual(holdIds(), [null, null]);
 	assert.match(await (await offerPage(sam)).text(), /This request expired/);
