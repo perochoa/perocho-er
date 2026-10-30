@@ -20,7 +20,8 @@ export const GET: APIRoute = async ({ site: origin }) => {
 		...services.flatMap(({ data, body }) => [
 			`### ${data.title}`,
 			"",
-			`Price: ${priceText(data)} (Canadian dollars).`,
+			// "Message us for a quote" has no dollars to name.
+			`Price: ${priceText(data)}${data.price || data.perItem ? " (Canadian dollars)" : ""}.`,
 			"",
 			(body ?? "").trim(),
 			"",
