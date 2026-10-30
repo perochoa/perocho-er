@@ -50,6 +50,7 @@ async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS))
 		slotMinutes: env.SLOT_MINUTES,
 		leadHours: env.LEAD_HOURS,
 		daysAhead: env.DAYS_AHEAD,
+		timeZone: env.TIME_ZONE,
 	};
 	const to = options.now + options.daysAhead * 86_400_000;
 	// A calendar that can't be read (unshared, or a wrong calendarId in TECHS) costs that tech their
