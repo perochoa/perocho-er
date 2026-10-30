@@ -2,7 +2,7 @@
 // Home page: the Marketplace rating summary and buyers' reviews. Shows nothing while marketplace
 // is unset.
 import Rosette from "./Rosette.astro";
-import { marketplace } from "../reviews";
+import { highlyRated, marketplace, starRow } from "../reviews";
 
 const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", dateStyle: "long" });
 ---
@@ -20,17 +20,19 @@ const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", dateStyle:
 						<p class="score">
 							<strong>{marketplace.stars.toFixed(1)}</strong>
 							<span>
-								<span class="stars" aria-hidden="true">{"★".repeat(marketplace.stars)}</span>
+								<span class="stars" aria-hidden="true">{starRow(marketplace.stars)}</span>
 								<span>{marketplace.ratings} ratings on Facebook Marketplace</span>
 							</span>
 						</p>
-						<p class="badge big">
-							<Rosette />
-							<span>
-								<strong>Highly rated</strong>
-								<span>4.5 stars or higher from at least 5 buyers</span>
-							</span>
-						</p>
+						{highlyRated(marketplace) && (
+							<p class="badge big">
+								<Rosette />
+								<span>
+									<strong>Highly rated</strong>
+									<span>4.5 stars or higher from at least 5 buyers</span>
+								</span>
+							</p>
+						)}
 						<h3>What customers pointed out</h3>
 						<ul class="strengths">
 							{marketplace.strengths.map(({ label, count }, i) => (
@@ -50,7 +52,7 @@ const dayFormat = new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", dateStyle:
 							<li class="card quote" data-reveal style={`--i: ${i + 1}`}>
 								<figure>
 									<p class="stars" role="img" aria-label={`${review.stars} out of 5 stars`}>
-										{"★".repeat(review.stars)}
+										{starRow(review.stars)}
 									</p>
 									<blockquote>
 										<p>{review.text}</p>

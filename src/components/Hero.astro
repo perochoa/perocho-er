@@ -3,7 +3,7 @@
 import HeroScene from "./HeroScene.astro";
 import Joystick from "./Joystick.astro";
 import Rosette from "./Rosette.astro";
-import { marketplace } from "../reviews";
+import { highlyRated, marketplace, starRow } from "../reviews";
 import { site } from "../site";
 ---
 
@@ -33,11 +33,17 @@ import { site } from "../site";
 				marketplace && (
 					<a class="rating" href="#reviews">
 						<span class="badge">
-							<Rosette />
-							Highly rated on Facebook Marketplace
+							{highlyRated(marketplace) ? (
+								<>
+									<Rosette />
+									Highly rated on Facebook Marketplace
+								</>
+							) : (
+								"Rated on Facebook Marketplace"
+							)}
 						</span>
 						<span>
-							<span class="stars" aria-hidden="true">{"★".repeat(marketplace.stars)}</span>{" "}
+							<span class="stars" aria-hidden="true">{starRow(marketplace.stars)}</span>{" "}
 							{marketplace.stars} stars from {marketplace.ratings} ratings
 						</span>
 					</a>
