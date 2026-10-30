@@ -201,14 +201,25 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 		const match = [...service.options].find((option) => option.dataset.id === wanted);
 		if (match) match.selected = true;
 
-		// A live count under long text fields, shown once they're near the limit.
+		// A live count under long text fields, shown once they're near the limit. Screen readers only
+		// hear it at a few steps on the way down, not on every key. The count sits inside the label, so
+		// it's hidden from them there to keep it out of the field's name.
+		const announce = Object.assign(document.createElement("p"), { className: "visually-hidden" });
+		announce.setAttribute("aria-live", "polite");
+		form.append(announce);
+		const STEPS = [100, 50, 20, 0];
 		form.querySelectorAll<HTMLTextAreaElement>("textarea[data-count]").forEach((area) => {
 			const counter = Object.assign(document.createElement("p"), { className: "counter" });
-			counter.setAttribute("aria-live", "polite");
+			counter.setAttribute("aria-hidden", "true");
 			area.after(counter);
+			let before = area.maxLength - area.value.length;
 			const update = () => {
 				const left = area.maxLength - area.value.length;
 				counter.textContent = left <= 300 ? `${left} characters left` : "";
+				if (STEPS.some((step) => left <= step && before > step)) {
+					announce.textContent = left === 0 ? "No characters left" : `${left} characters left`;
+				}
+				before = left;
 			};
 			area.addEventListener("input", update);
 			update();
@@ -421,8 +432,16 @@ const services = (await getCollection("services")).sort((a, b) => a.data.order -
 	.card > label + .hint {
 		margin-top: 0.375rem;
 	}
-	.error:empty {
-		display: none;
+	/* An empty error takes no space but stays in the accessibility tree, so screen readers keep
+	   listening to it as a live region. */
+	.error:empty,
+	:global(.visually-hidden) {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	.error {
 		margin: 0;
