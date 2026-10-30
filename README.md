@@ -29,8 +29,8 @@ Pushing to `main` deploys to GitHub Pages (`.github/workflows/deploy.yml`, built
 `withastro/action`). `public/CNAME` sets the custom domain. Pull requests run
 `.github/workflows/ci.yml`, which builds the site and typechecks and tests the intake worker.
 
-Feature branches are made from `dev` and opened as pull requests into `dev` for testing. Once
-tested, `dev` is merged into `main`, which deploys.
+Feature branches are made from `dev` and rebased into it for testing, without pull requests.
+Once tested, `dev` is merged into `main` through a pull request, which deploys.
 
 ## Intake worker
 
