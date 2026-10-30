@@ -233,6 +233,11 @@ const steps = site.intakeUrl
 										<ul class="tags" aria-label="Pointed out">
 											{review.notable.map((tag) => <li>{tag}</li>)}
 										</ul>
+										{/* Marketplace has no link to a single review; the profile lists them under "Reviews of". */}
+										<a class="source" href={site.marketplace!.url}>
+											<span class="visually-hidden">{review.name}'s review </span>On Facebook Marketplace{" "}
+											<span aria-hidden="true">↗</span>
+										</a>
 									</li>
 								))}
 							</ul>
@@ -714,6 +719,34 @@ const steps = site.intakeUrl
 		margin: 1rem 0 0;
 		padding: 0;
 		list-style: none;
+	}
+	.source {
+		display: inline-flex;
+		gap: 0.25rem;
+		margin-top: 1rem;
+		color: var(--muted);
+		font-size: 0.8125rem;
+		font-weight: 600;
+		text-decoration: none;
+		transition: color 0.15s;
+	}
+	.source:hover,
+	.source:focus-visible {
+		color: var(--accent);
+	}
+	.source span[aria-hidden] {
+		transition: transform 0.2s;
+	}
+	.source:hover span[aria-hidden] {
+		transform: translate(2px, -2px);
+	}
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	.tags li {
 		padding: 0.125rem 0.625rem;
