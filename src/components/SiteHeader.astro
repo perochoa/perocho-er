@@ -271,4 +271,18 @@ const links = [
 			font-size: 1rem;
 		}
 	}
+	/* The smallest phones (320px) can't fit the name, the button and the menu on one line, so the
+	   name goes onto two. */
+	@media (max-width: 22.5rem) {
+		.bar {
+			gap: 0.5rem;
+		}
+		.brand {
+			white-space: normal;
+			line-height: 1.1;
+		}
+		.brand :global(svg) {
+			flex-shrink: 0;
+		}
+	}
 </style>
