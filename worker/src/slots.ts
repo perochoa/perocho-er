@@ -44,18 +44,30 @@ export const isAvailable = (summary: string) => /^\s*available/i.test(summary);
 export const blocks = (event: CalendarEvent) =>
 	!event.allDay && !event.transparent && !event.declined && !event.available;
 
+// One formatter per time zone; building them is slow and the zone list is tiny.
+const formatters = new Map<string, Intl.DateTimeFormat>();
+
+function formatter(timeZone: string) {
+	let format = formatters.get(timeZone);
+	if (!format) {
+		format = new Intl.DateTimeFormat("en-US", {
+			timeZone,
+			hourCycle: "h23",
+			year: "numeric",
+			month: "numeric",
+			day: "numeric",
+			hour: "numeric",
+			minute: "numeric",
+			second: "numeric",
+		});
+		formatters.set(timeZone, format);
+	}
+	return format;
+}
+
 // How far timeZone's clock is ahead of UTC at a moment, in ms.
 function offset(ms: number, timeZone: string) {
-	const parts = new Intl.DateTimeFormat("en-US", {
-		timeZone,
-		hourCycle: "h23",
-		year: "numeric",
-		month: "numeric",
-		day: "numeric",
-		hour: "numeric",
-		minute: "numeric",
-		second: "numeric",
-	}).formatToParts(ms);
+	const parts = formatter(timeZone).formatToParts(ms);
 	const part = Object.fromEntries(parts.map(({ type, value }) => [type, Number(value)]));
 	return Date.UTC(part.year, part.month - 1, part.day, part.hour, part.minute, part.second) - ms;
 }
