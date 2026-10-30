@@ -15,6 +15,7 @@ import { accessRole, accessToken, listEvents } from "../src/google.ts";
 import { EMAIL } from "../src/intake.ts";
 import { openSlots, slotOptions } from "../src/slots.ts";
 import { parseTechs, type Tech } from "../src/techs.ts";
+import { wranglerVars } from "./wrangler-vars.ts";
 
 const { values: args } = parseArgs({
 	options: {
@@ -26,11 +27,8 @@ const { values: args } = parseArgs({
 
 if (existsSync(".dev.vars")) process.loadEnvFile(".dev.vars");
 
-// The same settings the deployed worker uses. wrangler.jsonc only has whole-line comments.
-const vars = JSON.parse(readFileSync("wrangler.jsonc", "utf8").replace(/^\s*\/\/.*$/gm, "")).vars as Pick<
-	Env,
-	"MAIL_FROM" | "SLOT_MINUTES" | "LEAD_HOURS" | "DAYS_AHEAD" | "TIME_ZONE"
->;
+// The same settings the deployed worker uses.
+const vars = wranglerVars() as Pick<Env, "MAIL_FROM" | "SLOT_MINUTES" | "LEAD_HOURS" | "DAYS_AHEAD" | "TIME_ZONE">;
 
 let failed = false;
 const ok = (message: string) => console.log(`  ok    ${message}`);

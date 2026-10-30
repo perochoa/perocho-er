@@ -4,13 +4,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { site } from "../../src/site.ts";
+import { wranglerVars } from "../scripts/wrangler-vars.ts";
 
 const read = (path: string) => readFileSync(`${import.meta.dirname}/${path}`, "utf8");
 
 test("the site quotes the rush fee the worker charges", () => {
-	// wrangler.jsonc only has whole-line comments, as scripts/check-techs.ts also assumes.
-	const { vars } = JSON.parse(read("../wrangler.jsonc").replace(/^\s*\/\/.*$/gm, ""));
-	assert.equal(site.rushFee, vars.RUSH_FEE);
+	assert.equal(site.rushFee, wranglerVars().RUSH_FEE);
 });
 
 test("every outcome the worker redirects to has a page on the site", () => {
