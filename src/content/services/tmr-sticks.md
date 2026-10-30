@@ -2,6 +2,11 @@
 title: PS5 controller stick drift fix (TMR upgrade)
 order: 1
 price: $25 per stick, or $20 per stick for 4 or more
+perItem:
+  item: stick
+  price: 25
+  bulkPrice: 20
+  bulkFrom: 4
 ---
 
 Character moving on its own? Camera creeping to one side? That's stick drift. The stock DualSense
