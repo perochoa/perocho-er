@@ -13,19 +13,13 @@ import { accessToken, createEvent, deleteEvent, listEvents } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
 import { act, expire, page, queue } from "./offers.ts";
-import { openSlots, type Slot } from "./slots.ts";
+import { openSlots, type Slot, slotOptions } from "./slots.ts";
 import { parseTechs, type Tech } from "./techs.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
 async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS)) {
-	const options = {
-		now: Date.now(),
-		slotMinutes: env.SLOT_MINUTES,
-		leadHours: env.LEAD_HOURS,
-		daysAhead: env.DAYS_AHEAD,
-		timeZone: env.TIME_ZONE,
-	};
+	const options = slotOptions(env, Date.now());
 	const to = options.now + options.daysAhead * 86_400_000;
 	// A calendar that can't be read (unshared, or a wrong calendarId in TECHS) costs that tech their
 	// times, not everyone's. The log names the tech; only when no calendar can be read is it an error.

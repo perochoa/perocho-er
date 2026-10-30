@@ -13,7 +13,7 @@ import { parseArgs } from "node:util";
 import { sendMail } from "../src/fastmail.ts";
 import { accessRole, accessToken, listEvents } from "../src/google.ts";
 import { EMAIL } from "../src/intake.ts";
-import { openSlots } from "../src/slots.ts";
+import { openSlots, slotOptions } from "../src/slots.ts";
 import { parseTechs, type Tech } from "../src/techs.ts";
 
 const { values: args } = parseArgs({
@@ -27,13 +27,10 @@ const { values: args } = parseArgs({
 if (existsSync(".dev.vars")) process.loadEnvFile(".dev.vars");
 
 // The same settings the deployed worker uses. wrangler.jsonc only has whole-line comments.
-const vars = JSON.parse(readFileSync("wrangler.jsonc", "utf8").replace(/^\s*\/\/.*$/gm, "")).vars as {
-	MAIL_FROM: string;
-	SLOT_MINUTES: number;
-	LEAD_HOURS: number;
-	DAYS_AHEAD: number;
-	TIME_ZONE: string;
-};
+const vars = JSON.parse(readFileSync("wrangler.jsonc", "utf8").replace(/^\s*\/\/.*$/gm, "")).vars as Pick<
+	Env,
+	"MAIL_FROM" | "SLOT_MINUTES" | "LEAD_HOURS" | "DAYS_AHEAD" | "TIME_ZONE"
+>;
 
 let failed = false;
 const ok = (message: string) => console.log(`  ok    ${message}`);
@@ -90,13 +87,7 @@ async function checkCalendar(token: string, tech: Tech, now: number) {
 	const to = now + vars.DAYS_AHEAD * 86_400_000;
 	const events = await listEvents(token, tech.calendarId, now, to);
 	const blocks = events.filter((event) => event.available && !event.declined).length;
-	const slots = openSlots([events], {
-		now,
-		slotMinutes: vars.SLOT_MINUTES,
-		leadHours: vars.LEAD_HOURS,
-		daysAhead: vars.DAYS_AHEAD,
-		timeZone: vars.TIME_ZONE,
-	}).length;
+	const slots = openSlots([events], slotOptions(vars, now)).length;
 	const window = `in the next ${vars.DAYS_AHEAD} days`;
 	if (blocks === 0) warn(`no "Available..." blocks ${window}, so they won't be offered any times`);
 	else if (slots === 0) warn(`${blocks} "Available..." block${blocks === 1 ? "" : "s"} ${window}, but other events cover every time in them, or they are too soon`);

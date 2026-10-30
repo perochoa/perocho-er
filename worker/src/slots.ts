@@ -30,6 +30,18 @@ export interface SlotOptions {
 	timeZone: string; // places all-day blocks' hours
 }
 
+// The options from the worker's vars, as both the worker and scripts/check-techs.ts read them.
+export const slotOptions = (
+	vars: Pick<Env, "SLOT_MINUTES" | "LEAD_HOURS" | "DAYS_AHEAD" | "TIME_ZONE">,
+	now: number,
+): SlotOptions => ({
+	now,
+	slotMinutes: vars.SLOT_MINUTES,
+	leadHours: vars.LEAD_HOURS,
+	daysAhead: vars.DAYS_AHEAD,
+	timeZone: vars.TIME_ZONE,
+});
+
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
