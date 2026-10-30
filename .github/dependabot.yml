@@ -18,7 +18,7 @@ updates:
     directory: /worker
     schedule:
       interval: weekly
-    # Hold TypeScript majors until @astrojs/check supports them; both packages move together.
+    # Hold TypeScript majors so the worker stays on the same major as the root package; both move together.
     ignore:
       - dependency-name: typescript
         update-types: ["version-update:semver-major"]
