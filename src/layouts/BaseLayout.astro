@@ -5,6 +5,7 @@ import "@fontsource/ibm-plex-sans/latin-700.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
+import revealBeforePaint from "../scripts/reveal-before-paint.js?raw";
 
 interface Props {
 	title: string;
@@ -15,6 +16,11 @@ interface Props {
 
 const { title, description, noindex = false } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+// Sharing preview: 1200x630 PNG, as Facebook wants, at an absolute URL.
+const ogImage = new URL("/og-image.png", Astro.site);
+// Astro only hashes the scripts it bundles, so the policy gets this inline one's hash from here.
+const revealHash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(revealBeforePaint));
+Astro.csp?.insertScriptHash(`sha256-${btoa(String.fromCharCode(...new Uint8Array(revealHash)))}`);
 ---
 
 <!doctype html>
@@ -31,18 +37,56 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 		{!noindex && <meta property="og:url" content={canonicalURL} />}
 		<meta property="og:title" content={title} />
 		<meta property="og:description" content={description} />
+		<meta property="og:image" content={ogImage} />
+		<meta property="og:image:width" content="1200" />
+		<meta property="og:image:height" content="630" />
+		<meta property="og:image:alt" content="Perocho Repairs. PS5 repairs and upgrades: stick drift, overheating and HDMI ports." />
+		<meta name="twitter:card" content="summary_large_image" />
+		<script is:inline set:html={revealBeforePaint} />
 	</head>
 	<body>
 		<SiteHeader />
 		<slot />
 		<SiteFooter />
 		<script>
-			// Fades marked blocks in as they scroll into view. Only with JS and without reduced motion: the
-			// class goes on <html> here, so without it everything is simply there.
-			const motion = matchMedia("(prefers-reduced-motion: no-preference)");
-			const blocks = document.querySelectorAll<HTMLElement>("[data-reveal]");
-			if (motion.matches && "IntersectionObserver" in window && blocks.length) {
-				document.documentElement.classList.add("reveal-on");
+			import { site } from "../site";
+
+			// On phones, "Message us" opens the Messenger app straight away.
+			// iPads report a Mac user agent, so they're told apart by touch.
+			const android = /Android/.test(navigator.userAgent);
+			const ios =
+				/iPhone|iPad|iPod/.test(navigator.userAgent) ||
+				(navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent));
+			// Android gets an intent link: the browser itself opens the app, or m.me when it isn't installed.
+			// iOS can't ask whether the app is there, and a timer can't tell Safari's "Open in Messenger?"
+			// prompt (or a Cancel) from a missing app, so there's no automatic fallback: the first tap tries
+			// the app, and if the page is still showing, the next one follows the plain m.me link.
+			const [scheme, path] = site.messengerAppUrl.split("://");
+			const appUrl = android
+				? `intent://${path}#Intent;scheme=${scheme};package=com.facebook.orca;S.browser_fallback_url=${encodeURIComponent(site.messengerUrl)};end`
+				: site.messengerAppUrl;
+			let tried = false;
+			if (android || ios) {
+				document.addEventListener("click", (event) => {
+					const link = (event.target as Element).closest?.(`a[href="${site.messengerUrl}"]`);
+					if (!link || tried) return;
+					event.preventDefault();
+					tried = ios;
+					location.href = appUrl;
+				});
+				// The page hides when the app opens, so the app works here: keep using it.
+				document.addEventListener("visibilitychange", () => {
+					if (document.hidden) tried = false;
+				});
+			}
+		</script>
+		<script>
+			// Fades marked blocks in as they scroll into view. The script in <head> has already hidden them.
+			const root = document.documentElement;
+			if (root.classList.contains("reveal-on")) {
+				root.classList.add("reveal-ready");
+				// Printing shows everything, scrolled into view or not.
+				addEventListener("beforeprint", () => root.classList.remove("reveal-on"));
 				const observer = new IntersectionObserver(
 					(entries) => {
 						for (const entry of entries) {
@@ -53,7 +97,7 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 					},
 					{ rootMargin: "0px 0px -8% 0px" },
 				);
-				blocks.forEach((block) => observer.observe(block));
+				document.querySelectorAll("[data-reveal]").forEach((block) => observer.observe(block));
 			}
 		</script>
 	</body>
@@ -96,6 +140,9 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 		@view-transition {
 			navigation: auto;
 		}
+	}
+	/* Screen only, so print never hides a block that hasn't scrolled into view. */
+	@media screen and (prefers-reduced-motion: no-preference) {
 		/* An animation, not a transition, so it leaves the blocks' own hover transitions alone. */
 		.reveal-on [data-reveal]:not(.is-in) {
 			opacity: 0;
@@ -200,6 +247,15 @@ const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 	.button.small {
 		padding: 0.5rem 1rem;
 		font-size: 0.9375rem;
+	}
+	/* Hidden on screen, still read by screen readers. */
+	.visually-hidden {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
 	}
 	:focus-visible {
 		outline: 2px solid var(--accent);

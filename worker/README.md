@@ -57,9 +57,12 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   tech declines or it expires, and if it failed to go through.
 - If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
   the calendar too: the hold has everything the email would have, including your link.
-- Times are offered between 2 hours and 31 days ahead, on the quarter hour inside each
-  block (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
-  `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same.
+- Times are offered from 2 hours ahead, on the quarter hour inside each block. The form's row
+  of days shows the next 31 days, and its calendar the current month and the 11 after it; each
+  month is read from the calendars when someone opens it (`GET /slots?month=YYYY-MM`)
+  (`LEAD_HOURS`, `DAYS_AHEAD`, `MONTHS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
+  `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same (`npm test` fails if they
+  differ).
 
 ## Setup
 
@@ -94,7 +97,13 @@ All free tiers. Do these once.
    out of this public repo.
 
    ```json
-   [{ "name": "Richard", "calendarId": "richard@gmail.com", "email": "richard@example.com" }]
+   [
+     {
+       "name": "Richard",
+       "calendarId": "richard@gmail.com",
+       "email": "richard@example.com"
+     }
+   ]
    ```
 
 5. **Turn the form on:** set `intakeUrl` in `src/site.ts` to the URL `wrangler deploy` printed
@@ -148,9 +157,9 @@ DEV_ORIGINS=http://localhost:4321
 Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
 already sent keep going to the techs they were sent to.
 
-To check a TECHS list before or after setting it, put it in `techs.json` here (keep it out of
-git) and the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or
-pass `--key <file>`:
+To check a TECHS list before or after setting it, put it in `techs.json` here (gitignored) and
+the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or save the
+key as `service-account.json` here (also gitignored) and pass `--key service-account.json`:
 
 ```sh
 npm run check-techs             # the list, calendar sharing, "Available" blocks and open times
@@ -158,6 +167,16 @@ npm run check-techs -- --send   # also emails each tech a test (FASTMAIL_TOKEN i
 ```
 
 It changes nothing on the calendars, and exits 1 if any check failed.
+
+## Customer data
+
+Requests, with the customer's name, email, phone and what they wrote, are kept in D1 while
+they're in use. The hourly job deletes a request and its offers `RETENTION_DAYS` (180) days
+after its drop-off time once it's settled: declined by every tech, expired, or marked done. A
+repair that's taken but not marked done stays until it is, so it never drops out of a queue.
+One with a calendar hold the job hasn't managed to delete yet stays until the hold is gone.
+The emails and calendar events about it aren't touched. Change it in `wrangler.jsonc`, then
+`npm run types` and deploy.
 
 ## Spam
 
@@ -176,6 +195,7 @@ Two defences, neither needing JS:
   over many IPs or locations can still get through; add Turnstile if that starts happening.
   Over-limit posts show up in the worker's logs as `rate limited a request`.
 
-  `GET /slots` has its own limit, **20 fetches a minute** per IP (`SLOTS_LIMITER`), since each one
-  reads every tech's calendar. Past it the worker answers 429, and the form says it couldn't
+  `GET /slots` has its own limit, **40 fetches a minute** per IP (`SLOTS_LIMITER`), since each one
+  reads every tech's calendar. It's higher than the form's own refreshes need because paging
+  through the calendar's months fetches each one. Past it the worker answers 429, and the form says it couldn't
   load the times and points people to Messenger and email. These show up as `rate limited /slots`.

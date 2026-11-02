@@ -11,9 +11,11 @@
 import { existsSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { sendMail } from "../src/fastmail.ts";
-import { accessToken, listEvents } from "../src/google.ts";
-import { parseTechs, type Tech } from "../src/index.ts";
-import { openSlots } from "../src/slots.ts";
+import { accessRole, accessToken, listEvents } from "../src/google.ts";
+import { EMAIL } from "../src/intake.ts";
+import { openSlots, slotOptions } from "../src/slots.ts";
+import { parseTechs, type Tech } from "../src/techs.ts";
+import { wranglerVars } from "./wrangler-vars.ts";
 
 const { values: args } = parseArgs({
 	options: {
@@ -25,14 +27,8 @@ const { values: args } = parseArgs({
 
 if (existsSync(".dev.vars")) process.loadEnvFile(".dev.vars");
 
-// The same settings the deployed worker uses. wrangler.jsonc only has whole-line comments.
-const vars = JSON.parse(readFileSync("wrangler.jsonc", "utf8").replace(/^\s*\/\/.*$/gm, "")).vars as {
-	MAIL_FROM: string;
-	SLOT_MINUTES: number;
-	LEAD_HOURS: number;
-	DAYS_AHEAD: number;
-	TIME_ZONE: string;
-};
+// The same settings the deployed worker uses.
+const vars = wranglerVars() as Pick<Env, "MAIL_FROM" | "SLOT_MINUTES" | "LEAD_HOURS" | "DAYS_AHEAD" | "TIME_ZONE">;
 
 let failed = false;
 const ok = (message: string) => console.log(`  ok    ${message}`);
@@ -41,10 +37,6 @@ const fail = (message: string) => {
 	failed = true;
 	console.log(`  FAIL  ${message}`);
 };
-
-// Loose on purpose: catches typos and calendar IDs used as addresses, not every invalid address.
-const looksLikeEmail = (address: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address);
-const emailOf = (tech: Tech) => tech.email ?? tech.calendarId;
 
 function readTechs(): Tech[] | null {
 	const raw = process.env.TECHS ?? readFileSync(args.techs ?? "techs.json", "utf8");
@@ -61,13 +53,13 @@ function checkList(techs: Tech[]) {
 	const repeated = (values: string[]) => [...new Set(values.filter((v, i) => values.indexOf(v) !== i))];
 	for (const name of repeated(techs.map((t) => t.name.trim().toLowerCase()))) fail(`"${name}" is listed more than once`);
 	for (const id of repeated(techs.map((t) => t.calendarId.toLowerCase()))) fail(`calendar ${id} is listed more than once`);
-	for (const email of repeated(techs.map((t) => emailOf(t).toLowerCase()))) warn(`${email} gets more than one tech's requests`);
+	for (const email of repeated(techs.map((t) => t.email.toLowerCase()))) warn(`${email} gets more than one tech's requests`);
 	for (const tech of techs) {
 		if (!tech.name.trim()) fail(`a tech with calendar ${tech.calendarId} has no name`);
-		const email = emailOf(tech);
+		const { email } = tech;
 		if (/calendar\.google\.com$/i.test(email)) {
 			fail(`${tech.name}: requests would go to the calendar ID ${email}, which can't get mail; add an "email"`);
-		} else if (!looksLikeEmail(email)) {
+		} else if (!EMAIL.test(email)) {
 			fail(`${tech.name}: "${email}" doesn't look like an email address`);
 		}
 	}
@@ -75,34 +67,25 @@ function checkList(techs: Tech[]) {
 
 // The worker reads events and writes holds, so the service account needs "Make changes to events".
 async function checkCalendar(token: string, tech: Tech, now: number) {
-	console.log(`${tech.name} (calendar ${tech.calendarId}, requests to ${emailOf(tech)})`);
-	const query = new URLSearchParams({ maxResults: "1", fields: "accessRole" });
-	const response = await fetch(
-		`https://www.googleapis.com/calendar/v3/calendars/${encodeURIComponent(tech.calendarId)}/events?${query}`,
-		{ headers: { Authorization: `Bearer ${token}` } },
-	);
-	if (response.status === 404) {
+	console.log(`${tech.name} (calendar ${tech.calendarId}, requests to ${tech.email})`);
+	let role: string | null;
+	try {
+		role = await accessRole(token, tech.calendarId);
+	} catch (error) {
+		fail(`can't read the calendar: ${(error as Error).message}`);
+		return;
+	}
+	if (role === null) {
 		fail("calendar not found: the ID is wrong, or it isn't shared with the service account");
 		return;
 	}
-	if (!response.ok) {
-		fail(`can't read the calendar: ${response.status} ${await response.text()}`);
-		return;
-	}
-	const { accessRole } = (await response.json()) as { accessRole?: string };
-	if (accessRole === "writer" || accessRole === "owner") ok(`shared with "Make changes to events" (${accessRole})`);
-	else fail(`shared as "${accessRole}"; it needs "Make changes to events" to hold times`);
+	if (role === "writer" || role === "owner") ok(`shared with "Make changes to events" (${role})`);
+	else fail(`shared as "${role}"; it needs "Make changes to events" to hold times`);
 
 	const to = now + vars.DAYS_AHEAD * 86_400_000;
 	const events = await listEvents(token, tech.calendarId, now, to);
 	const blocks = events.filter((event) => event.available && !event.declined).length;
-	const slots = openSlots([events], {
-		now,
-		slotMinutes: vars.SLOT_MINUTES,
-		leadHours: vars.LEAD_HOURS,
-		daysAhead: vars.DAYS_AHEAD,
-		timeZone: vars.TIME_ZONE,
-	}).length;
+	const slots = openSlots([events], slotOptions(vars, now)).length;
 	const window = `in the next ${vars.DAYS_AHEAD} days`;
 	if (blocks === 0) warn(`no "Available..." blocks ${window}, so they won't be offered any times`);
 	else if (slots === 0) warn(`${blocks} "Available..." block${blocks === 1 ? "" : "s"} ${window}, but other events cover every time in them, or they are too soon`);
@@ -122,14 +105,14 @@ async function sendTests(techs: Tech[]) {
 			await sendMail(token, [
 				{
 					from: vars.MAIL_FROM,
-					to: emailOf(tech),
+					to: tech.email,
 					subject: "Test: repair requests will come to this address",
 					text: `Hi ${tech.name},\n\nThis is a test from the repair request form's setup check. Repair requests will be emailed to this address. Nothing to do; you can delete this.\n`,
 				},
 			]);
-			ok(`sent to ${tech.name} at ${emailOf(tech)}; check that it arrived`);
+			ok(`sent to ${tech.name} at ${tech.email}; check that it arrived`);
 		} catch (error) {
-			fail(`${tech.name} at ${emailOf(tech)}: ${(error as Error).message}`);
+			fail(`${tech.name} at ${tech.email}: ${(error as Error).message}`);
 		}
 	}
 }

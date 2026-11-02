@@ -7,6 +7,7 @@ import { type Mail, sendMail } from "./fastmail.ts";
 import { accessToken, bookEvent, createEvent, deleteEvent } from "./google.ts";
 import { describe, dialable, formatTime, type Intake, stop, what } from "./intake.ts";
 import * as notices from "./notices.ts";
+import { escape, html } from "./pages.ts";
 
 interface RequestRow {
 	id: string;
@@ -162,7 +163,8 @@ async function finish(env: Env, { offer, request }: Loaded) {
 
 // Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
 // customer, then deletes the holds nobody needs any more: a declined tech's, and every hold but
-// the booking once a request is settled. Holds whose delete failed earlier are among them.
+// the booking once a request is settled. Holds whose delete failed earlier are among them. Last,
+// it deletes the customer's details once a request is settled and RETENTION_DAYS past its time.
 export async function expire(env: Env, now = Date.now()): Promise<void> {
 	const { results: expired } = await env.DB.prepare(
 		`UPDATE requests SET status = 'expired'
@@ -187,17 +189,32 @@ export async function expire(env: Env, now = Date.now()): Promise<void> {
 		 WHERE offers.hold_id IS NOT NULL AND offers.token IS NOT requests.confirmed_by
 		 AND (offers.declined = 1 OR requests.status != 'pending')`,
 	).all<OfferRow>();
-	if (strays.length === 0) return;
-	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
-	for (const offer of strays) {
-		try {
-			await deleteEvent(token, offer.calendar_id, offer.hold_id!);
-			await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(offer.token).run();
-		} catch (error) {
-			// Still on the calendar; the next run tries again.
-			console.error(error);
+	// Without Google the holds wait for the next run, but the retention delete below still runs.
+	const token = strays.length > 0 ? await accessToken(env.GOOGLE_SERVICE_ACCOUNT).catch((error) => console.error(error)) : undefined;
+	if (token) {
+		for (const offer of strays) {
+			try {
+				await deleteEvent(token, offer.calendar_id, offer.hold_id!);
+				await env.DB.prepare("UPDATE offers SET hold_id = NULL WHERE token = ?").bind(offer.token).run();
+			} catch (error) {
+				// Still on the calendar; the next run tries again.
+				console.error(error);
+			}
 		}
 	}
+
+	// Settled: nobody took it, or it's back with the customer. A repair still in someone's queue
+	// stays however old it is, and so does one with a hold still to delete, since its offer is the
+	// only record of the hold. Offers first, since they point at the request.
+	const settled = `SELECT id FROM requests WHERE slot_start < ?1
+		AND (status IN ('declined', 'expired') OR done IS NOT NULL)
+		AND NOT EXISTS (SELECT 1 FROM offers WHERE offers.request_id = requests.id
+			AND offers.hold_id IS NOT NULL AND offers.token IS NOT requests.confirmed_by)`;
+	const cutoff = now - env.RETENTION_DAYS * 86_400_000;
+	await env.DB.batch([
+		env.DB.prepare(`DELETE FROM offers WHERE request_id IN (${settled})`).bind(cutoff),
+		env.DB.prepare(`DELETE FROM requests WHERE id IN (${settled})`).bind(cutoff),
+	]);
 }
 
 export async function act(env: Env, token: string, action: string): Promise<void> {
@@ -208,45 +225,30 @@ export async function act(env: Env, token: string, action: string): Promise<void
 	if (action === "done") await finish(env, loaded);
 }
 
-const escape = (text: string) =>
-	text.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-
-const html = (title: string, body: string, status = 200) =>
-	new Response(
-		`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex">
-<title>${escape(title)}</title>
-<style>
-	:root { color-scheme: light dark; --muted: #666; --accent: #1f6feb; --line: #ddd; }
-	@media (prefers-color-scheme: dark) { :root { --muted: #aaa; --accent: #58a6ff; --line: #333; } }
-	body { font: 1rem/1.5 system-ui, sans-serif; max-width: 40rem; margin: 0 auto; padding: 2rem 1rem; }
-	h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
-	.state { color: var(--muted); margin: 0 0 1.5rem; }
-	pre { white-space: pre-wrap; font: inherit; border: 1px solid var(--line); border-radius: 0.5rem; padding: 1rem; margin: 0 0 1.5rem; }
-	form { display: flex; gap: 0.75rem; flex-wrap: wrap; }
-	button { font: inherit; font-weight: 600; padding: 0.6rem 1.2rem; border-radius: 0.5rem; border: 1px solid var(--accent); cursor: pointer; background: none; color: var(--accent); }
-	button[value="confirm"] { background: var(--accent); color: Canvas; }
-	.call { margin: 0 0 1rem; }
-	.rush { margin: 0 0 1rem; font-weight: 700; }
-	.mine { margin: 1.5rem 0 0; }
-	.mine a, .queue a { color: var(--accent); }
-	.queue { padding-left: 1.5rem; margin: 0 0 1.5rem; }
-	.queue li { margin: 0 0 1rem; }
-	.queue .what { font-weight: 600; }
-	.queue .details { color: var(--muted); }
-	.call a { color: var(--accent); font-weight: 600; }
-</style>
-</head>
-<body>
-${body}
-</body>
-</html>`,
-		{ status, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } },
-	);
+// What a tech's link says, and the buttons it offers, for where the request stands.
+function view(offer: OfferRow, request: RequestRow, taker: OfferRow | undefined, intake: Intake, time: string): [string, string, string] {
+	const take = '<button name="action" value="confirm">Take it</button>';
+	if (request.status === "confirmed") {
+		if (taker?.token === offer.token) {
+			if (request.done !== null) return ["You finished this repair", "It's out of your queue.", ""];
+			return [
+				"You took this request",
+				"It's yours, and the customer has been told. Agree with them when it'll be ready, and mark it done once it's back with them.",
+				'<button name="action" value="done">Mark done</button>',
+			];
+		}
+		return [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""];
+	}
+	if (request.status === "declined") return ["Every tech declined this request", "The customer has been told.", ""];
+	if (request.status === "expired") return ["This request expired", "Nobody took it in time, and the customer has been told.", ""];
+	if (passed(request)) return ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""];
+	if (offer.declined) return ["You declined this request", "It's still open for the others, so you can take it after all.", take];
+	return [
+		intake.rush ? "New rush repair request" : "New repair request",
+		`Drop-off ${stop(time)} The first tech to take it gets it.`,
+		take + '<button name="action" value="decline">Decline</button>',
+	];
+}
 
 export async function page(env: Env, token: string): Promise<Response> {
 	const loaded = await load(env.DB, token);
@@ -255,33 +257,7 @@ export async function page(env: Env, token: string): Promise<Response> {
 	const time = timeOf(env, request);
 	const taker = offers.find((other) => other.token === request.confirmed_by);
 
-	const take = '<button name="action" value="confirm">Take it</button>';
-	const done = '<button name="action" value="done">Mark done</button>';
-	const decline = offer.declined ? "" : '<button name="action" value="decline">Decline</button>';
-	const [title, state, buttons] =
-		request.status === "confirmed"
-			? taker?.token === offer.token
-				? request.done !== null
-					? ["You finished this repair", "It's out of your queue.", ""]
-					: [
-							"You took this request",
-							"It's yours, and the customer has been told. Agree with them when it'll be ready, and mark it done once it's back with them.",
-							done,
-						]
-				: [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""]
-			: request.status === "declined"
-				? ["Every tech declined this request", "The customer has been told.", ""]
-				: request.status === "expired"
-					? ["This request expired", "Nobody took it in time, and the customer has been told.", ""]
-					: passed(request)
-						? ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""]
-						: offer.declined
-							? ["You declined this request", "It's still open for the others, so you can take it after all.", take]
-							: [
-									intake.rush ? "New rush repair request" : "New repair request",
-									`Drop-off ${stop(time)} The first tech to take it gets it.`,
-									take + decline,
-								];
+	const [title, state, buttons] = view(offer, request, taker, intake, time);
 
 	// Payment is in person, so the fee is only a reminder.
 	const rush = intake.rush
@@ -302,14 +278,14 @@ ${buttons && `<form method="post">${buttons}</form>`}
 // The repairs this tech took and hasn't marked done, in the order to work them: rush first, then
 // the earliest drop-off, then the first filed. A tech is their calendar, as everywhere else a
 // request meets one. `rush > 0`, not `rush`: a rush is a rush whatever fee it was quoted at.
-const QUEUE = `SELECT requests.*, offers.token FROM requests JOIN offers ON offers.token = requests.confirmed_by
+const QUEUE_SQL = `SELECT requests.*, offers.token FROM requests JOIN offers ON offers.token = requests.confirmed_by
 	WHERE requests.status = 'confirmed' AND requests.done IS NULL AND offers.calendar_id = ?
 	ORDER BY requests.rush > 0 DESC, requests.slot_start, requests.created`;
 
 export async function queue(env: Env, token: string): Promise<Response> {
 	const offer = await env.DB.prepare("SELECT * FROM offers WHERE token = ?").bind(token).first<OfferRow>();
 	if (!offer) return html("Queue not found", "<h1>Queue not found</h1><p>This link doesn't match a request.</p>", 404);
-	const { results } = await env.DB.prepare(QUEUE).bind(offer.calendar_id).all<RequestRow & { token: string }>();
+	const { results } = await env.DB.prepare(QUEUE_SQL).bind(offer.calendar_id).all<RequestRow & { token: string }>();
 
 	const items = results.map((request) => {
 		const intake: Intake = JSON.parse(request.intake);

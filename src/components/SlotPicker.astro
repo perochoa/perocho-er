@@ -1,0 +1,636 @@
+---
+// Request form: the drop-off time. Days show a week at a time from today, swiped or stepped forward
+// up to the worker's DAYS_AHEAD and never back; a calendar shows the months after, up to its
+// MONTHS_AHEAD, each read from the worker when it's first shown. The picked day's times are a
+// column that scrolls on its own. Days without times are grayed out and can't be picked. It keeps
+// the times fresh, and won't let the form be sent without one. It tells its form how loading went
+// with two events, so the form can show its fields or point people elsewhere:
+// - "slots-open": there are times to pick.
+// - "slots-unavailable": there are none, or they couldn't be loaded; detail is the reason to show.
+interface Props {
+	// The worker's /slots endpoint.
+	url: string;
+}
+
+const { url } = Astro.props;
+const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+---
+
+<div class="card slot-picker" data-slot-picker data-url={url}>
+	<fieldset>
+		<legend>Drop-off time</legend>
+		<p class="hint">When you'll bring your device in. Only days and times when a tech can take it in can be picked.</p>
+		<div class="head">
+			<!-- popovertarget opens and closes the calendar, and Esc or a click outside closes it, with no script. -->
+			<button type="button" class="month-toggle" popovertarget="slot-calendar">
+				<span data-week-month></span><span class="visually-hidden">, pick a day from the calendar</span>
+				<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4" /></svg>
+			</button>
+			<div class="steps">
+				<button type="button" class="step" data-prev-week aria-label="Earlier days" disabled>
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 4L6 8l4 4" /></svg>
+				</button>
+				<button type="button" class="step" data-next-week aria-label="Later days">
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4" /></svg>
+				</button>
+			</div>
+		</div>
+
+		<div class="calendar" id="slot-calendar" popover data-calendar>
+			<div class="head">
+				<button type="button" class="step" data-prev-month aria-label="Previous month">
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 4L6 8l4 4" /></svg>
+				</button>
+				<p class="calendar-month" data-calendar-month aria-live="polite"></p>
+				<button type="button" class="step" data-next-month aria-label="Next month">
+					<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4l4 4-4 4" /></svg>
+				</button>
+			</div>
+			<!-- Each day's button says its full date, so the column headings are only for the eye. -->
+			<div class="month" aria-hidden="true">{weekdays.map((day) => <span class="weekday">{day}</span>)}</div>
+			<div class="month" data-calendar-days></div>
+			<p class="hint" data-calendar-note aria-live="polite"></p>
+		</div>
+
+		<!-- One page per week, side by side. Scroll snapping turns a swipe into a step of a week, and the
+		     first page starts today, so there's nothing earlier to reach. -->
+		<div class="week" role="group" aria-label="Days" data-week></div>
+
+		<p class="picked" id="slot-day" data-picked></p>
+		<div class="times" role="radiogroup" aria-labelledby="slot-day" aria-describedby="slot-error" data-times></div>
+		<p class="error" id="slot-error" data-slot-error aria-live="polite"></p>
+	</fieldset>
+</div>
+
+<script>
+	interface SlotsResponse {
+		timeZone: string;
+		daysAhead: number;
+		monthsAhead: number;
+		slots: { start: string }[];
+	}
+	// A day's times by its date; days without any aren't listed.
+	type Times = Map<string, { value: string; label: string }[]>;
+
+	const picker = document.querySelector<HTMLElement>("[data-slot-picker]");
+	const form = picker?.closest("form");
+
+	if (picker && form) {
+		const find = <T extends HTMLElement = HTMLElement>(hook: string) => picker.querySelector<T>(`[data-${hook}]`)!;
+		const weekMonth = find("week-month");
+		const prevWeek = find<HTMLButtonElement>("prev-week");
+		const nextWeek = find<HTMLButtonElement>("next-week");
+		const week = find("week");
+		const calendar = find("calendar");
+		const calendarMonth = find("calendar-month");
+		const calendarDays = find("calendar-days");
+		const calendarNote = find("calendar-note");
+		const prevMonth = find<HTMLButtonElement>("prev-month");
+		const nextMonth = find<HTMLButtonElement>("next-month");
+		const pickedDay = find("picked");
+		const times = find("times");
+		const error = find("slot-error");
+
+		const unavailable = (reason: string) => form.dispatchEvent(new CustomEvent("slots-unavailable", { detail: reason }));
+		const motion = () => (matchMedia("(prefers-reduced-motion: no-preference)").matches ? "smooth" : "auto");
+
+		// Days are "YYYY-MM-DD" and months "YYYY-MM", in the worker's zone. They're formatted and
+		// stepped as noon UTC on that date, so neither ever shifts a day.
+		const DAY = 86_400_000;
+		const noon = (day: string) => Date.parse(`${day}T12:00:00Z`);
+		const addDays = (day: string, n: number) => new Date(noon(day) + n * DAY).toISOString().slice(0, 10);
+		const addMonths = (month: string, n: number) => {
+			const [year, index] = month.split("-").map(Number);
+			return new Date(Date.UTC(year, index - 1 + n, 1)).toISOString().slice(0, 7);
+		};
+		const lastOf = (month: string) => addDays(`${addMonths(month, 1)}-01`, -1);
+		const utc = (options: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat("en-CA", { timeZone: "UTC", ...options });
+		const weekdayOf = utc({ weekday: "short" });
+		const nameOf = utc({ weekday: "long", month: "long", day: "numeric" });
+		const monthOf = utc({ month: "long", year: "numeric" });
+
+		// Set from the first response. The times' dates and labels are in the worker's zone, so the
+		// days match the times it offers and holds.
+		let dateIn: Intl.DateTimeFormat;
+		let timeIn: Intl.DateTimeFormat;
+		let today = "";
+		let lastDay = ""; // the last day in the row of weeks
+		let monthsAhead = 1;
+
+		// The row's times come from /slots; the calendar's past the row from /slots?month=, a month
+		// at a time.
+		let row: Times = new Map();
+		let rowLoaded = false;
+		const months = new Map<string, { times: Times; body: string; fetchedAt: number }>();
+		const failed = new Set<string>();
+		const fetching = new Set<string>();
+
+		let picked = ""; // the picked day
+		let shown = ""; // the calendar's month
+
+		const group = (slots: { start: string }[]) => {
+			const byDay: Times = new Map();
+			for (const slot of slots) {
+				const start = new Date(slot.start);
+				const key = dateIn.format(start);
+				if (!byDay.has(key)) byDay.set(key, []);
+				byDay.get(key)!.push({ value: slot.start, label: timeIn.format(start) });
+			}
+			return byDay;
+		};
+		// A month past the row needs its own fetch; one inside it is already known.
+		const inRow = (month: string) => lastOf(month) <= lastDay;
+		const known = (day: string) => (day <= lastDay ? rowLoaded : months.has(day.slice(0, 7)));
+		const timesOn = (day: string) => (day <= lastDay ? row : months.get(day.slice(0, 7))?.times)?.get(day) ?? [];
+		const chosen = () => times.querySelector<HTMLInputElement>("input:checked")?.value ?? "";
+
+		const dayButton = (day: string, withWeekday: boolean) => {
+			const button = document.createElement("button");
+			button.type = "button";
+			button.className = "day";
+			button.dataset.day = day;
+			const open = timesOn(day).length > 0;
+			button.disabled = !open;
+			button.ariaPressed = String(day === picked);
+			button.ariaLabel = nameOf.format(noon(day)) + (open || !known(day) ? "" : ", no times");
+			const part = (text: string, className: string) => Object.assign(document.createElement("span"), { textContent: text, className });
+			if (withWeekday) button.append(part(weekdayOf.format(noon(day)), "weekday"));
+			button.append(part(String(Number(day.slice(8))), "date"));
+			return button;
+		};
+
+		// The page of the row in view, and the arrows and month heading that go with it.
+		const page = () => (week.clientWidth ? Math.round(week.scrollLeft / week.clientWidth) : 0);
+		const updateWeek = () => {
+			const at = page();
+			prevWeek.disabled = at === 0;
+			nextWeek.disabled = at >= week.children.length - 1;
+			const first = week.children[at]?.querySelector<HTMLElement>("[data-day]")?.dataset.day ?? today;
+			weekMonth.textContent = monthOf.format(noon(first));
+		};
+		const scrollToDay = (day: string, behavior: ScrollBehavior) => {
+			if (day > lastDay) return;
+			const index = Math.floor((noon(day) - noon(today)) / DAY / 7);
+			week.scrollTo({ left: index * week.clientWidth, behavior });
+		};
+
+		const renderWeek = () => {
+			const left = week.scrollLeft;
+			const pages = [];
+			for (let start = today; start <= lastDay; start = addDays(start, 7)) {
+				const page = document.createElement("div");
+				page.className = "page";
+				for (let i = 0; i < 7; i++) {
+					const day = addDays(start, i);
+					page.append(day <= lastDay ? dayButton(day, true) : document.createElement("span"));
+				}
+				pages.push(page);
+			}
+			week.replaceChildren(...pages);
+			week.scrollLeft = left;
+			updateWeek();
+		};
+
+		const renderCalendar = () => {
+			const first = `${shown}-01`;
+			const blanks = Array.from({ length: new Date(noon(first)).getUTCDay() }, () => document.createElement("span"));
+			const days = [];
+			for (let day = first; day.startsWith(shown); day = addDays(day, 1)) days.push(dayButton(day, false));
+			calendarDays.replaceChildren(...blanks, ...days);
+			calendarMonth.textContent = monthOf.format(noon(first));
+			prevMonth.disabled = shown <= today.slice(0, 7);
+			nextMonth.disabled = shown >= addMonths(today.slice(0, 7), monthsAhead - 1);
+
+			const loading = !inRow(shown) && !months.has(shown);
+			calendarDays.ariaBusy = String(loading && !failed.has(shown));
+			if (loading) {
+				calendarNote.textContent = failed.has(shown) ? "We couldn't load this month's times. Try again in a moment." : "Loading times…";
+			} else {
+				calendarNote.textContent = days.some((button) => !button.disabled) ? "" : "No open times this month.";
+			}
+		};
+
+		// Their pick, kept if it's still open.
+		const renderTimes = (keep: string) => {
+			pickedDay.textContent = picked ? nameOf.format(noon(picked)) : "";
+			times.replaceChildren(
+				...timesOn(picked).map(({ value, label }) => {
+					const choice = document.createElement("label");
+					const radio = Object.assign(document.createElement("input"), { type: "radio", name: "slot", value, checked: value === keep });
+					choice.append(radio, label);
+					return choice;
+				}),
+			);
+		};
+
+		// Rebuilds everything from the times known now. Called whenever they change, so it keeps
+		// their pick and the day they had open, or says why it can't.
+		const rebuild = () => {
+			const before = chosen();
+			if (picked && known(picked) && timesOn(picked).length === 0) {
+				// Their day closed: fall back to the first open day in the row, as on first load.
+				picked = row.keys().next().value ?? "";
+			}
+			renderWeek();
+			renderTimes(before);
+			if (before !== "" && chosen() !== before) error.textContent = "The time you picked isn't open any more. Pick another.";
+			if (calendar.matches(":popover-open")) renderCalendar();
+		};
+
+		const pick = (day: string) => {
+			picked = day;
+			error.textContent = "";
+			picker.querySelectorAll<HTMLElement>("[data-day]").forEach((button) => (button.ariaPressed = String(button.dataset.day === day)));
+			renderTimes("");
+			times.scrollTop = 0;
+			// A small nudge toward the next step.
+			times.classList.remove("nudge");
+			void times.offsetWidth;
+			times.classList.add("nudge");
+		};
+
+		week.addEventListener("click", (event) => {
+			const button = (event.target as Element).closest<HTMLElement>("[data-day]");
+			if (button) pick(button.dataset.day!);
+		});
+		calendarDays.addEventListener("click", (event) => {
+			const button = (event.target as Element).closest<HTMLElement>("[data-day]");
+			if (!button) return;
+			pick(button.dataset.day!);
+			calendar.hidePopover();
+			scrollToDay(picked, motion());
+		});
+		times.addEventListener("change", () => (error.textContent = ""));
+		prevWeek.addEventListener("click", () => week.scrollBy({ left: -week.clientWidth, behavior: motion() }));
+		nextWeek.addEventListener("click", () => week.scrollBy({ left: week.clientWidth, behavior: motion() }));
+		week.addEventListener("scroll", () => requestAnimationFrame(updateWeek), { passive: true });
+
+		const REFRESH_MS = 60_000;
+
+		// Reads a month past the row. The calendar shows it loading meanwhile, and a failed fetch
+		// keeps whatever was there before.
+		const loadMonth = (month: string) => {
+			if (inRow(month) || fetching.has(month)) return;
+			fetching.add(month);
+			const url = new URL(picker.dataset.url!, location.href);
+			url.searchParams.set("month", month);
+			fetch(url)
+				.then((response) => (response.ok ? response.text() : Promise.reject(response.status)))
+				.then((body) => {
+					failed.delete(month);
+					const cached = months.get(month);
+					if (cached?.body === body) {
+						cached.fetchedAt = Date.now();
+						return;
+					}
+					months.set(month, { times: group((JSON.parse(body) as SlotsResponse).slots), body, fetchedAt: Date.now() });
+					rebuild();
+				})
+				.catch(() => {
+					if (!months.has(month)) failed.add(month);
+				})
+				.finally(() => {
+					fetching.delete(month);
+					if (shown === month && calendar.matches(":popover-open")) renderCalendar();
+				});
+		};
+
+		// Paging through months renders each at once, and only fetches the one they stop on, so a
+		// quick run of clicks costs one fetch, not one per month.
+		let waiting = 0;
+		const showMonth = (month: string, delay: number) => {
+			shown = month;
+			renderCalendar();
+			clearTimeout(waiting);
+			const cached = months.get(month);
+			if (!cached || Date.now() - cached.fetchedAt > REFRESH_MS) waiting = setTimeout(() => loadMonth(month), delay);
+		};
+		prevMonth.addEventListener("click", () => showMonth(addMonths(shown, -1), 250));
+		nextMonth.addEventListener("click", () => showMonth(addMonths(shown, 1), 250));
+		calendar.addEventListener("toggle", (event) => {
+			if ((event as ToggleEvent).newState !== "open") return;
+			const first = week.children[page()]?.querySelector<HTMLElement>("[data-day]")?.dataset.day ?? today;
+			showMonth((picked || first).slice(0, 7), 0);
+		});
+
+		// Builds the row from a /slots response.
+		const show = (response: SlotsResponse) => {
+			const now = Date.now();
+			dateIn = new Intl.DateTimeFormat("en-CA", { timeZone: response.timeZone, year: "numeric", month: "2-digit", day: "2-digit" });
+			timeIn = new Intl.DateTimeFormat("en-CA", { timeZone: response.timeZone, hour: "numeric", minute: "2-digit" });
+			today = dateIn.format(now);
+			lastDay = dateIn.format(now + response.daysAhead * DAY);
+			monthsAhead = response.monthsAhead;
+			row = group(response.slots);
+			rowLoaded = true;
+
+			const later = [...months.values()].some(({ times }) => [...times.keys()].some((day) => day > lastDay));
+			if (row.size === 0 && !later) {
+				if (chosen()) error.textContent = "The time you picked isn't open any more. Pick another.";
+				unavailable("There are no open drop-off times right now.");
+				return;
+			}
+			const first = !picked;
+			if (first) picked = row.keys().next().value ?? "";
+			rebuild();
+			form.dispatchEvent(new CustomEvent("slots-open"));
+			// Only now is the row on screen, with a width to scroll by.
+			if (first) scrollToDay(picked, "auto");
+		};
+
+		// Without a picked time the worker turns the request down, so stop here and take them to the
+		// picker. The browser has already checked the other fields by now. Capture, so this runs before
+		// the form's own submit handlers, which leave a stopped submit alone.
+		form.addEventListener(
+			"submit",
+			(event) => {
+				if (chosen()) return;
+				event.preventDefault();
+				error.textContent = "Pick a drop-off time before you send your request.";
+				(times.querySelector("input") ?? week.querySelector<HTMLElement>("[data-day]:not(:disabled)"))?.focus();
+			},
+			{ capture: true },
+		);
+
+		// Techs change their calendars while people fill in the form, so fetch again every so often
+		// while the page is in view, and as soon as they come back to it: the row, and the month of a
+		// day picked past it or open in the calendar. The picker is only rebuilt when the times
+		// differ, so a refresh doesn't disturb someone using it.
+		let last = "";
+		let fetchedAt = 0;
+		let loadingRow = false;
+		const load = () => {
+			if (loadingRow) return;
+			loadingRow = true;
+			fetchedAt = Date.now();
+			fetch(picker.dataset.url!)
+				.then((response) => (response.ok ? response.text() : Promise.reject(response.status)))
+				.then((body) => {
+					if (body === last) return;
+					last = body;
+					show(JSON.parse(body));
+				})
+				// Keep whatever is showing, and the next refresh tries again. With nothing showing yet,
+				// say so instead of leaving them waiting.
+				.catch(() => {
+					if (last === "") unavailable("We couldn't load the open times.");
+				})
+				.finally(() => (loadingRow = false));
+		};
+		const refresh = () => {
+			load();
+			if (picked > lastDay) loadMonth(picked.slice(0, 7));
+			if (calendar.matches(":popover-open")) loadMonth(shown);
+		};
+		// The first load waits for the page's other scripts, so the form is listening for its result.
+		addEventListener("DOMContentLoaded", load, { once: true });
+		setInterval(() => document.visibilityState === "visible" && refresh(), REFRESH_MS);
+		document.addEventListener("visibilitychange", () => {
+			if (document.visibilityState === "visible" && Date.now() - fetchedAt > REFRESH_MS / 4) refresh();
+		});
+		// A different width means different page widths, so line the row back up with a week.
+		addEventListener("resize", () => {
+			week.scrollTo({ left: page() * week.clientWidth });
+			updateWeek();
+		});
+	}
+</script>
+
+<style>
+	.head {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.month-toggle {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.375rem;
+		margin-left: -0.5rem;
+		padding: 0.375rem 0.5rem;
+		border: 0;
+		border-radius: 0.5rem;
+		background: none;
+		color: var(--ink);
+		font: inherit;
+		font-weight: 700;
+		cursor: pointer;
+	}
+	.month-toggle:hover {
+		background: color-mix(in srgb, var(--accent) 10%, transparent);
+	}
+	.steps {
+		display: flex;
+		gap: 0.375rem;
+	}
+	.step {
+		display: grid;
+		place-items: center;
+		width: 2.25rem;
+		height: 2.25rem;
+		padding: 0;
+		border: 1px solid var(--line);
+		border-radius: 50%;
+		background: var(--bg);
+		color: var(--ink);
+		cursor: pointer;
+	}
+	.step:hover:not(:disabled) {
+		border-color: var(--accent);
+	}
+	.step:disabled {
+		opacity: 0.35;
+		cursor: default;
+	}
+	svg {
+		width: 1rem;
+		height: 1rem;
+		fill: none;
+		stroke: currentColor;
+		stroke-width: 1.75;
+		stroke-linecap: round;
+		stroke-linejoin: round;
+	}
+
+	/* The row: a page a week, a swipe or an arrow at a time. Its scrollbar would only repeat them. */
+	.week {
+		display: flex;
+		overflow-x: auto;
+		overscroll-behavior-x: contain;
+		scroll-snap-type: x mandatory;
+		scrollbar-width: none;
+	}
+	.week::-webkit-scrollbar {
+		display: none;
+	}
+	/* The pages, days and times are built by the script, so they don't carry this component's scope:
+	   they're reached as :global() under elements that do. */
+	.week :global(.page),
+	.month {
+		display: grid;
+		grid-template-columns: repeat(7, minmax(0, 1fr));
+		gap: 0.375rem;
+	}
+	.week :global(.page) {
+		flex: 0 0 100%;
+		scroll-snap-align: start;
+		scroll-snap-stop: always;
+	}
+
+	.slot-picker :global(.day) {
+		display: grid;
+		justify-items: center;
+		gap: 0.125rem;
+		padding: 0.5rem 0;
+		border: 1px solid var(--line);
+		border-radius: 0.625rem;
+		background: var(--bg);
+		color: var(--ink);
+		font: inherit;
+		cursor: pointer;
+	}
+	/* Inside the row, which clips anything past its edges. */
+	.slot-picker :global(.day:focus-visible) {
+		outline-offset: -3px;
+	}
+	.slot-picker :global(.day:hover:not(:disabled)) {
+		border-color: var(--accent);
+	}
+	.slot-picker :global(.weekday) {
+		color: var(--muted);
+		font-size: 0.75rem;
+	}
+	.slot-picker :global(.date) {
+		font-size: 1.0625rem;
+		font-weight: 700;
+		font-variant-numeric: tabular-nums;
+	}
+	.slot-picker :global(.day:disabled) {
+		background: transparent;
+		opacity: 0.4;
+		cursor: default;
+	}
+	.slot-picker :global(.day:disabled .date) {
+		font-weight: 400;
+	}
+	.slot-picker :global(.day[aria-pressed="true"]) {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--on-accent);
+	}
+	.slot-picker :global(.day[aria-pressed="true"] .weekday) {
+		color: inherit;
+	}
+
+	/* Centered on screen where anchoring isn't supported; under its button where it is. */
+	.calendar {
+		box-sizing: border-box;
+		width: min(21rem, calc(100vw - 2rem));
+		padding: 1rem;
+		border: 1px solid var(--line);
+		border-radius: 0.75rem;
+		background: var(--surface);
+		color: var(--ink);
+		box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 0.18);
+	}
+	.calendar[popover]:popover-open {
+		display: grid;
+		gap: 0.75rem;
+	}
+	@supports (anchor-name: --a) {
+		.month-toggle {
+			anchor-name: --slot-calendar;
+		}
+		.calendar {
+			position-anchor: --slot-calendar;
+			position-area: bottom span-right;
+			position-try-fallbacks: flip-block, bottom span-left;
+			margin: 0.5rem 0;
+		}
+	}
+	.calendar-month {
+		margin: 0;
+		font-weight: 700;
+	}
+	.month .weekday {
+		text-align: center;
+	}
+	.month :global(.day) {
+		aspect-ratio: 1;
+		place-content: center;
+		padding: 0;
+		border-color: transparent;
+	}
+	.month[aria-busy="true"] :global(.day) {
+		cursor: progress;
+	}
+
+	.picked {
+		margin: 0;
+		font-weight: 600;
+	}
+	.picked:empty {
+		display: none;
+	}
+	/* The times scroll on their own, and a scroll that reaches the end stays here instead of moving
+	   the page. */
+	.times {
+		display: grid;
+		gap: 0.375rem;
+		max-height: 18rem;
+		overflow-y: auto;
+		overscroll-behavior: contain;
+		padding: 0.375rem;
+		border: 1px solid var(--line);
+		border-radius: 0.625rem;
+	}
+	.times:empty {
+		display: none;
+	}
+	.times :global(label) {
+		position: relative;
+		display: block;
+		padding: 0.625rem 0.875rem;
+		border: 1px solid var(--line);
+		border-radius: 0.5rem;
+		background: var(--bg);
+		font-variant-numeric: tabular-nums;
+		cursor: pointer;
+	}
+	.times :global(label:hover) {
+		border-color: var(--accent);
+	}
+	.times :global(label:has(:checked)) {
+		border-color: var(--accent);
+		background: var(--accent);
+		color: var(--on-accent);
+	}
+	.times :global(label:has(:focus-visible)) {
+		outline: 2px solid var(--accent);
+		outline-offset: 2px;
+	}
+	/* The row is the radio: the input is only there for the form and the keyboard. */
+	.times :global(input) {
+		position: absolute;
+		inset: 0;
+		width: 100%;
+		height: 100%;
+		margin: 0;
+		opacity: 0;
+		cursor: pointer;
+	}
+
+	/* A small nudge toward the times once a day is picked. */
+	@media (prefers-reduced-motion: no-preference) {
+		.nudge {
+			animation: nudge 0.5s ease-out;
+		}
+	}
+	@keyframes nudge {
+		30% {
+			border-color: var(--accent);
+			box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 20%, transparent);
+		}
+	}
+</style>

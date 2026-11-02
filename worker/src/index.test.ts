@@ -21,7 +21,9 @@ const env = {
 	SLOT_MINUTES: 15,
 	LEAD_HOURS: 2,
 	DAYS_AHEAD: 31,
+	MONTHS_AHEAD: 12,
 	RUSH_FEE: 20,
+	RETENTION_DAYS: 180,
 	DEV_ORIGINS: "",
 	TECHS: JSON.stringify([
 		{ name: "Richard", calendarId: "richard@example.com" },
@@ -207,14 +209,64 @@ const submit = (fields: Record<string, string>, headers: Record<string, string> 
 
 test("lists only times when some tech is free", async () => {
 	const response = await worker.fetch(new Request("https://intake.test/slots"), env);
-	const { timeZone, slots } = (await response.json()) as { timeZone: string; slots: { start: string }[] };
+	const { timeZone, daysAhead, slots } = (await response.json()) as { timeZone: string; daysAhead: number; slots: { start: string }[] };
 	assert.equal(timeZone, env.TIME_ZONE);
+	assert.equal(daysAhead, 31);
 	const starts = slots.map((s) => s.start);
 	assert.ok(starts.includes(iso(slotStart)));
 	assert.ok(starts.includes(iso(slotStart + 3 * quarter)));
 	assert.ok(!starts.includes(iso(slotStart + hour)));
 	assert.equal(response.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
 	assert.equal(response.headers.get("Cache-Control"), "no-cache");
+});
+
+// A month in Toronto, `ahead` from the current one, as /slots?month= takes it.
+const monthOf = (ms: number) =>
+	new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit" }).format(ms);
+const monthAhead = (ahead: number) => {
+	const [year, month] = monthOf(Date.now()).split("-").map(Number);
+	return monthOf(Date.UTC(year, month - 1 + ahead, 15));
+};
+const slotsFor = (month: string) => worker.fetch(new Request(`https://intake.test/slots?month=${month}`), env);
+
+test("lists a month's times when asked for one", async () => {
+	// The fixture's Available block runs two weeks from the day before slotStart, so the month after
+	// slotStart's may have a few of them too; none fall outside the asked-for month.
+	const month = monthOf(slotStart);
+	const response = await slotsFor(month);
+	const { monthsAhead, slots } = (await response.json()) as { monthsAhead: number; slots: { start: string }[] };
+	assert.equal(monthsAhead, 12);
+	assert.ok(slots.some((s) => s.start === iso(slotStart)));
+	assert.ok(slots.every((s) => monthOf(Date.parse(s.start)) === month));
+});
+
+test("turns down a month outside the booking window before calling Google", async () => {
+	for (const month of [monthAhead(-1), monthAhead(12), "2026-13", "soon"]) {
+		const response = await slotsFor(month);
+		assert.equal(response.status, 400, month);
+	}
+	assert.deepEqual(fetches, []);
+});
+
+test("takes a time months ahead, in an Available block past DAYS_AHEAD", async () => {
+	const later = Math.ceil((Date.now() + 70 * 24 * hour) / hour) * hour;
+	calendars["sam@example.com"].push({ summary: "Available", start: { dateTime: iso(later) }, end: { dateTime: iso(later + hour) } });
+	const response = await submit({ slot: iso(later) });
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.deepEqual(holds.map((hold) => hold.calendarId), ["sam@example.com"]);
+	// Only that time's span is read.
+	const read = fetches.map((href) => new URL(href).searchParams).filter((q) => q.has("timeMin"));
+	assert.equal(read.length, 2);
+	assert.ok(read.every((q) => q.get("timeMin") === iso(later) && q.get("timeMax") === iso(later + quarter)));
+});
+
+test("closes a time past the booking window", async () => {
+	const past = Date.now() + 400 * 24 * hour;
+	const start = Math.ceil(past / hour) * hour;
+	calendars["sam@example.com"].push({ summary: "Available", start: { dateTime: iso(start) }, end: { dateTime: iso(start + hour) } });
+	const response = await submit({ slot: iso(start) });
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/closed/");
+	assert.equal(holds.length, 0);
 });
 
 const slotsFrom = (origin: string, overrides = {}) =>
@@ -371,6 +423,19 @@ test("the same request sent twice is filed once", async () => {
 	assert.equal(mails.length, sent);
 });
 
+test("the same request sent twice at once is filed once, and the other's hold let go", async () => {
+	const responses = await Promise.all([submit({}), submit({})]);
+	for (const response of responses) {
+		assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	}
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM requests").get()!.n, 1);
+	assert.equal(db.sqlite.prepare("SELECT count(*) AS n FROM offers").get()!.n, 2);
+	assert.equal(holds.length, 2);
+	const kept = db.sqlite.prepare("SELECT hold_id FROM offers WHERE hold_id IS NOT NULL").get()!.hold_id;
+	assert.deepEqual(deleted.map((d) => d.eventId), [kept === "hold1" ? "hold2" : "hold1"]);
+	assert.equal(mails.filter((mail) => mail.to?.[0]?.email === "jane@example.com").length, 1);
+});
+
 test("the same request sent again a while later is a new one", async () => {
 	await submit({});
 	db.sqlite.prepare("UPDATE requests SET created = ?").run(Date.now() - hour);
@@ -518,6 +583,18 @@ test("shows a tech the request without changing anything", async () => {
 	assert.equal(patched.length + deleted.length, 0);
 });
 
+test("locks the tech's pages down to their own styles and forms", async () => {
+	await submit({ slot: iso(slotStart) });
+	const sam = linkFor("sam@example.com");
+	const unknown = "https://intake.test/offers/00000000-0000-4000-8000-000000000000";
+	for (const link of [sam, `${sam}/queue`, unknown]) {
+		assert.equal(
+			(await offerPage(link)).headers.get("Content-Security-Policy"),
+			"default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
+		);
+	}
+});
+
 test("escapes what the customer wrote on the page", async () => {
 	await submit({ problem: "<script>alert(1)</script>" });
 	const body = await (await offerPage(linkFor("sam@example.com"))).text();
@@ -608,6 +685,9 @@ test("declining only takes that tech out, until nobody's left", async () => {
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^We can't take your repair request/);
 	assert.match(await (await offerPage(sam)).text(), /Every tech declined/);
+	const when = text(to("jane@example.com")[0]).match(/Drop-off time: (.*)/)![1];
+	assert.equal(text(to("jane@example.com")[0]), `Hi Jane,\n\nSorry, none of our techs can make ${when} Reply to this email and we'll try to find another time, or send the form again with a different one.\n\nYour request:\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
+	assert.equal(text(to("repairs@perocho.com")[0]), `Every tech declined this request, and the customer has been told.\n\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
 });
 
 test("a tech who declined can still take it while it's open", async () => {
@@ -738,6 +818,9 @@ test("expires a request nobody took once its time starts, and lets the holds go"
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^We couldn't take your repair request/);
 	assert.match(to("repairs@perocho.com")[0].subject, /^Nobody took/);
+	const when = text(to("jane@example.com")[0]).match(/Drop-off time: (.*)/)![1];
+	assert.equal(text(to("jane@example.com")[0]), `Hi Jane,\n\nSorry, none of our techs could confirm ${when} Reply to this email and we'll try to find another time, or send the form again with a different one.\n\nYour request:\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
+	assert.equal(text(to("repairs@perocho.com")[0]), `Nobody took this request in time, so it's closed and the customer has been told.\n\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
 	assert.deepEqual(deleted.map((d) => d.calendarId).sort(), ["richard@example.com", "sam@example.com"]);
 	assert.deepEqual(holdIds(), [null, null]);
 	assert.match(await (await offerPage(sam)).text(), /This request expired/);
@@ -947,6 +1030,88 @@ test("the hourly job leaves a finished repair and its booking alone", async () =
 	await tick();
 	assert.equal(status(), "confirmed");
 	assert.equal(deleted.length + mails.length, 0);
+});
+
+// Retention: the hourly job deletes settled requests, offers first, once RETENTION_DAYS have passed.
+
+const day = 24 * hour;
+const count = (table: string) => (db.sqlite.prepare(`SELECT count(*) AS n FROM ${table}`).get() as any).n;
+// Moves every request's drop-off to `days` ago.
+const age = (days: number) =>
+	db.sqlite.prepare("UPDATE requests SET slot_start = ?1, slot_end = ?1 + ?2").run(Date.now() - days * day, quarter);
+
+test("the hourly job deletes settled requests and their offers once they're old enough", async () => {
+	both();
+	await submit({ slot: iso(slotStart) }); // nobody takes it, so it expires
+	await press(await taken({ slot: iso(slotStart + quarter) }), "done");
+	mails = [];
+	await submit({ slot: iso(slotStart + 2 * quarter) });
+	for (const tech of ["richard@example.com", "sam@example.com"]) await press(linkFor(tech), "decline");
+	assert.equal(count("requests"), 3);
+
+	age(env.RETENTION_DAYS + 1);
+	await tick();
+	assert.equal(count("requests"), 0);
+	assert.equal(count("offers"), 0);
+});
+
+test("the hourly job keeps an old repair that isn't marked done", async () => {
+	await taken({});
+	age(env.RETENTION_DAYS + 1);
+	await tick();
+	assert.equal(status(), "confirmed");
+	assert.equal(count("offers"), 2);
+});
+
+test("the hourly job keeps a settled request until it's old enough", async () => {
+	await press(await taken({}), "done");
+	age(env.RETENTION_DAYS - 1);
+	await tick();
+	assert.equal(count("requests"), 1);
+	assert.equal(count("offers"), 2);
+});
+
+test("the hourly job deletes old requests even when Google sign-in fails", async () => {
+	// A request with a declined tech's hold still on the calendar, and an old finished one.
+	both();
+	await submit({ slot: iso(slotStart) });
+	await withFailing("DELETE", () => press(linkFor("richard@example.com"), "decline"));
+	await press(await taken({ slot: iso(slotStart + 2 * quarter) }), "done");
+	db.sqlite
+		.prepare("UPDATE requests SET slot_start = ?1, slot_end = ?1 + ?2 WHERE done IS NOT NULL")
+		.run(Date.now() - (env.RETENTION_DAYS + 1) * day, quarter);
+
+	resetTokenCache();
+	const fake = globalThis.fetch;
+	globalThis.fetch = async (input, init) =>
+		String(input) === "https://oauth2.googleapis.com/token" ? new Response("down", { status: 500 }) : fake(input, init);
+	const original = console.error;
+	console.error = () => {};
+	try {
+		await tick();
+	} finally {
+		globalThis.fetch = fake;
+		console.error = original;
+	}
+	assert.equal(count("requests"), 1);
+	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
+});
+
+test("the hourly job keeps an old request until its stray holds are deleted", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	await withFailing("DELETE", () => press(linkFor("richard@example.com"), "decline"));
+	await withFailing("DELETE", () => press(linkFor("sam@example.com"), "decline"));
+	age(env.RETENTION_DAYS + 1);
+	await withFailing("DELETE", tick);
+	assert.equal(count("requests"), 1);
+	assert.deepEqual(holdIds(), ["hold1", "hold2"]);
+
+	// Once the holds are gone, so is the request.
+	await tick();
+	assert.equal(count("requests"), 0);
+	assert.equal(count("offers"), 0);
+	assert.ok(!calendars["richard@example.com"].some((e: any) => e.id === "hold1"));
 });
 
 test("answers an unknown queue link with 404", async () => {

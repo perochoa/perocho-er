@@ -1,62 +1,34 @@
 // Intake for repairs.perocho.com.
-//   GET  /slots          open drop-off times in the techs' "Available" blocks, for the form's time list
+//   GET  /slots          open drop-off times in the techs' "Available" blocks, for the form's time list:
+//                        the next DAYS_AHEAD days, or with ?month=YYYY-MM that month, if it's one of
+//                        the next MONTHS_AHEAD
 //   POST /request        the form; holds the picked time on every free tech's calendar, offers it to
 //                        every tech by email and tells the customer, then redirects back to the
 //                        site (the form works without JS)
 //   GET  /offers/<token> one tech's link to a request: shows it, with buttons to take or decline it
 //   POST /offers/<token> those buttons
 //   GET  /offers/<token>/queue  that tech's queue: the repairs they took and haven't marked done
-// and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time.
+// and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time, deletes stray
+// holds, and deletes settled requests past RETENTION_DAYS.
 
 import { sendMail } from "./fastmail.ts";
 import { accessToken, createEvent, deleteEvent, listEvents } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
 import { act, expire, page, queue } from "./offers.ts";
-import { openSlots, type Slot } from "./slots.ts";
+import { horizon, monthWindow, openSlots, type Slot, slotOptions } from "./slots.ts";
+import { parseTechs, type Tech } from "./techs.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
-export interface Tech {
-	name: string;
-	calendarId: string;
-	email?: string; // where their requests go; defaults to calendarId
-}
-
-// The secret is a JSON list of techs. Errors name TECHS but never echo it.
-export function parseTechs(raw: string): Tech[] {
-	let techs: unknown;
-	try {
-		techs = JSON.parse(raw);
-	} catch {
-		throw new Error("TECHS is not valid JSON");
-	}
-	const valid =
-		Array.isArray(techs) &&
-		techs.length > 0 &&
-		techs.every(
-			(tech) =>
-				typeof tech?.name === "string" &&
-				typeof tech?.calendarId === "string" &&
-				(tech.email === undefined || typeof tech.email === "string"),
-		);
-	if (!valid) throw new Error("TECHS must be a non-empty array of { name, calendarId, email? } strings");
-	return techs as Tech[];
-}
-
-async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS)) {
-	const options = {
-		now: Date.now(),
-		slotMinutes: env.SLOT_MINUTES,
-		leadHours: env.LEAD_HOURS,
-		daysAhead: env.DAYS_AHEAD,
-		timeZone: env.TIME_ZONE,
-	};
-	const to = options.now + options.daysAhead * 86_400_000;
+// The open times from now (or `from`, if later) until `to`. The calendars are only read for that
+// span, so a narrow one is cheap.
+async function findSlots(env: Env, token: string, techs: Tech[], from: number, to: number) {
+	const options = slotOptions(env, Date.now(), to);
 	// A calendar that can't be read (unshared, or a wrong calendarId in TECHS) costs that tech their
 	// times, not everyone's. The log names the tech; only when no calendar can be read is it an error.
 	const results = await Promise.allSettled(
-		techs.map((tech) => listEvents(token, tech.calendarId, options.now, to)),
+		techs.map((tech) => listEvents(token, tech.calendarId, Math.max(options.now, from), to)),
 	);
 	const events = results.map((result, i) => {
 		if (result.status === "fulfilled") return result.value;
@@ -67,7 +39,7 @@ async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS))
 	return { techs, slots: openSlots(events, options) };
 }
 
-async function slots(env: Env, origin: string | null, ip: string | null): Promise<Response> {
+async function slots(env: Env, month: string | null, origin: string | null, ip: string | null): Promise<Response> {
 	// Each fetch costs a Google call per tech, so cap it per visitor. The form treats any non-OK
 	// response as no times to pick, and points people to Messenger and email instead.
 	const { success } = await env.SLOTS_LIMITER.limit({ key: ip ?? "unknown" });
@@ -75,11 +47,20 @@ async function slots(env: Env, origin: string | null, ip: string | null): Promis
 		console.warn("rate limited /slots");
 		return new Response("Too many requests", { status: 429 });
 	}
+	// No month is the next DAYS_AHEAD days, for the form's week of days; a month is for its calendar.
+	const now = Date.now();
+	const window = month === null ? { from: now, to: slotOptions(env, now).to } : monthWindow(month, now, env.MONTHS_AHEAD, env.TIME_ZONE);
+	if (!window) return new Response("No such month to book in", { status: 400 });
 	const allowed = [env.SITE_URL, ...env.DEV_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)];
-	const { slots: open } = await findSlots(env, await accessToken(env.GOOGLE_SERVICE_ACCOUNT));
+	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+	const { slots: open } = await findSlots(env, token, parseTechs(env.TECHS), window.from, window.to);
 	return Response.json(
 		{
 			timeZone: env.TIME_ZONE,
+			// How far the form's row of days goes, and how many months its calendar may show,
+			// counting the current one.
+			daysAhead: env.DAYS_AHEAD,
+			monthsAhead: env.MONTHS_AHEAD,
 			slots: open.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })),
 		},
 		{
@@ -157,8 +138,11 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 	const offers: Offer[] = techs.map((tech) => ({ token: crypto.randomUUID(), tech, holdId: null }));
 	const link = (offer: Offer) => `${origin}/offers/${offer.token}`;
 
+	// Only the picked time's own span is read, wherever it is in the booking window. A time past the
+	// window has nothing to read, so it's closed.
 	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
-	const slot = (await findSlots(env, token, techs)).slots.find((s) => s.start === intake.slot);
+	const end = Math.min(intake.slot + env.SLOT_MINUTES * 60_000, horizon(Date.now(), env.MONTHS_AHEAD, env.TIME_ZONE));
+	const slot = (await findSlots(env, token, techs, intake.slot, end)).slots.find((s) => s.start === intake.slot);
 	if (!slot) return "closed";
 
 	// Every tech free then gets a hold, so they can all plan around it until one takes it.
@@ -174,30 +158,44 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 		throw (held.find((result) => result.status === "rejected") as PromiseRejectedResult).reason;
 	}
 
+	// The check above can't stop the same form sent twice at once, since both pass it before either
+	// is filed. So the insert checks again, atomically, and the offers only go in with their request.
 	const id = crypto.randomUUID();
+	const now = Date.now();
 	const db = env.DB;
 	const rows = [
-		db.prepare("INSERT INTO requests (id, created, intake, slot_start, slot_end, rush) VALUES (?, ?, ?, ?, ?, ?)")
-			.bind(id, Date.now(), JSON.stringify(intake), slot.start, slot.end, intake.rush),
+		db.prepare(
+			`INSERT INTO requests (id, created, intake, slot_start, slot_end, rush) SELECT ?1, ?2, ?3, ?4, ?5, ?6
+			WHERE NOT EXISTS (SELECT 1 FROM requests WHERE intake = ?3 AND created > ?7)`,
+		).bind(id, now, JSON.stringify(intake), slot.start, slot.end, intake.rush, now - REPEAT_MS),
 		...offers.map((offer, position) =>
 			db.prepare(
-				"INSERT INTO offers (token, request_id, position, name, email, calendar_id, hold_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-			).bind(offer.token, id, position, offer.tech.name, offer.tech.email ?? offer.tech.calendarId, offer.tech.calendarId, offer.holdId),
+				`INSERT INTO offers (token, request_id, position, name, email, calendar_id, hold_id)
+				SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE EXISTS (SELECT 1 FROM requests WHERE id = ?2)`,
+			).bind(offer.token, id, position, offer.tech.name, offer.tech.email, offer.tech.calendarId, offer.holdId),
 		),
 	];
-	const holds = offers.filter((offer) => offer.holdId);
+	// Without the rows the links lead nowhere, so let the holds go too.
+	const release = () =>
+		Promise.allSettled(
+			offers.filter((offer) => offer.holdId).map((offer) => deleteEvent(token, offer.tech.calendarId, offer.holdId!)),
+		);
+	let filed;
 	try {
-		await db.batch(rows);
+		filed = await db.batch(rows);
 	} catch (error) {
-		// Without the rows the links lead nowhere, so let the holds go too.
-		await Promise.allSettled(holds.map((offer) => deleteEvent(token, offer.tech.calendarId, offer.holdId!)));
+		await release();
 		throw error;
+	}
+	if (filed[0].meta.changes === 0) {
+		await release();
+		return "sent";
 	}
 
 	const time = formatTime(slot.start, env.TIME_ZONE);
 	const offered = offers.map((offer) => ({
 		name: offer.tech.name,
-		email: offer.tech.email ?? offer.tech.calendarId,
+		email: offer.tech.email,
 		link: link(offer),
 		held: offer.holdId !== null,
 	}));
@@ -224,10 +222,11 @@ const QUEUE = /^\/offers\/([0-9a-f-]{36})\/queue$/;
 
 export default {
 	async fetch(req: Request, env: Env): Promise<Response> {
-		const { pathname } = new URL(req.url);
+		const { pathname, searchParams } = new URL(req.url);
 		try {
 			if (req.method === "GET" && pathname === "/slots") {
-				return await slots(env, req.headers.get("Origin"), req.headers.get("CF-Connecting-IP"));
+				const month = searchParams.get("month");
+				return await slots(env, month, req.headers.get("Origin"), req.headers.get("CF-Connecting-IP"));
 			}
 			if (req.method === "POST" && pathname === "/request") {
 				const ip = req.headers.get("CF-Connecting-IP");

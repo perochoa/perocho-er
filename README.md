@@ -1,7 +1,7 @@
 # perocho-er
 
 The website for Perocho Repairs, PS5 repairs and upgrades in Mississauga, live at
-https://repairs.perocho.com. A static [Astro](https://astro.build) site with no UI framework.
+<https://repairs.perocho.com>. A static [Astro](https://astro.build) site with no UI framework.
 
 ## Development
 
@@ -29,7 +29,35 @@ Pushing to `main` deploys to GitHub Pages (`.github/workflows/deploy.yml`, built
 `withastro/action`). `public/CNAME` sets the custom domain. Pull requests run
 `.github/workflows/ci.yml`, which builds the site and typechecks and tests the intake worker.
 
+Feature branches are made from `dev` and rebased into it for testing, without pull requests.
+Once tested, `dev` is merged into `main` through a pull request, which deploys.
+
 ## Intake worker
 
 The repair request form (`/request/`) posts to a Cloudflare Worker in `worker/`, a separate npm
 package. See [`worker/README.md`](worker/README.md).
+
+# Testing local
+
+## 1. Create Env Vars
+
+- Create `workers/.dev.vars`
+  Values Required:
+
+```
+DEV_ORIGINS=http://localhost:4321
+TECHS=[{"name":"...","calendarId":"...","email":"..."}]
+GOOGLE_SERVICE_ACCOUNT={"client_email":"...","private_key":"..."}
+FASTMAIL_TOKEN=
+```
+
+## 2 Setup Worker
+
+`cd worker`
+`npx d1 wrangler migrations apply DB --local`
+`npx wrangler dev` <!--serves on http://localhost:8787 -->
+
+## Run
+
+- set `src/site.ts` `intakeUrl=http://localhost:8787`
+- `npm run dev`

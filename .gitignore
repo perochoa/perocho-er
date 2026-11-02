@@ -26,3 +26,6 @@ pnpm-debug.log*
 # wrangler
 .wrangler/
 .dev.vars*
+# check-techs inputs: tech emails and calendar ids, service account key
+worker/techs.json
+worker/service-account*.json

@@ -33,17 +33,8 @@ export interface Mail {
 	text: string;
 }
 
-// Some or all of the mails weren't sent; `sent` is whether any of them were.
-export class MailError extends Error {
-	sent: boolean;
-	constructor(message: string, sent: boolean) {
-		super(message);
-		this.sent = sent;
-	}
-}
-
 // Sends them together: one session and one set of calls however many there are. Throws if any
-// of them wasn't sent: a MailError once some may have gone out, any other error when none did.
+// of them wasn't sent, though others may have gone out by then.
 export async function sendMail(token: string, mails: Mail[]): Promise<void> {
 	if (mails.length === 0) return;
 	const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
@@ -135,9 +126,6 @@ export async function sendMail(token: string, mails: Mail[]): Promise<void> {
 			"submission",
 		],
 	]);
-	const sent = Object.keys(submitted[1].created ?? {}).length > 0;
-	if (created[1].notCreated) throw new MailError(`jmap email: ${JSON.stringify(created[1].notCreated)}`, sent);
-	if (submitted[1].notCreated) {
-		throw new MailError(`jmap submission: ${JSON.stringify(submitted[1].notCreated)}`, sent);
-	}
+	if (created[1].notCreated) throw new Error(`jmap email: ${JSON.stringify(created[1].notCreated)}`);
+	if (submitted[1].notCreated) throw new Error(`jmap submission: ${JSON.stringify(submitted[1].notCreated)}`);
 }

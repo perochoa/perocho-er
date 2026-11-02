@@ -37,10 +37,18 @@ jobs:
             worker:
               - 'worker/**'
 
+  # Same checks as CI, run before anything deploys. Skipped along with the worker deploy.
+  worker-check:
+    needs: changes
+    if: needs.changes.outputs.worker == 'true' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/worker-check.yml
+
   # Deploys the worker first when worker/** changed, and on every manual run, so the site never
   # ships ahead of a worker response it depends on. Otherwise the whole job is skipped.
   worker:
-    needs: changes
+    needs: [changes, worker-check]
     if: needs.changes.outputs.worker == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     permissions:
@@ -52,6 +60,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # wrangler-action uses the wrangler version pinned in worker/package-lock.json once installed.
       - name: Set up Node
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -61,15 +70,6 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Check generated types are current
-        run: npm run types -- --check
-
-      - name: Typecheck
-        run: npm run check
-
-      - name: Test
-        run: npm test
 
       # New migrations first, so the deployed code never runs against an older schema. Migrations
       # must therefore keep working with the code that's live until the deploy finishes.

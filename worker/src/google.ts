@@ -79,6 +79,18 @@ interface GoogleEvent {
 	attendees?: { self?: boolean; responseStatus?: string }[];
 }
 
+// The service account's access to a calendar ("writer" or "owner" to hold times), or null when
+// Google can't find it: a wrong ID, or not shared. For scripts/check-techs.ts; the worker just tries.
+export async function accessRole(token: string, calendarId: string): Promise<string | null> {
+	const query = new URLSearchParams({ maxResults: "1", fields: "accessRole" });
+	const response = await fetch(`${API}/${encodeURIComponent(calendarId)}/events?${query}`, {
+		headers: { Authorization: `Bearer ${token}` },
+	});
+	if (response.status === 404) return null;
+	if (!response.ok) throw new Error(`google access: ${response.status} ${await response.text()}`);
+	return ((await response.json()) as { accessRole?: string }).accessRole ?? "";
+}
+
 export async function listEvents(
 	token: string,
 	calendarId: string,

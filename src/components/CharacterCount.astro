@@ -1,0 +1,49 @@
+---
+// Request form: a textarea with a live count under it, shown once it's near its limit. Screen readers
+// only hear it at a few steps on the way down, not on every key. Put it inside the field's <label>:
+// the count is hidden from screen readers there, to keep it out of the field's name.
+import type { HTMLAttributes } from "astro/types";
+
+type Props = HTMLAttributes<"textarea"> & { maxlength: number };
+---
+
+<textarea {...Astro.props} data-count></textarea>
+<span class="counter" aria-hidden="true"></span>
+
+<script>
+	const areas = document.querySelectorAll<HTMLTextAreaElement>("textarea[data-count]");
+
+	if (areas.length > 0) {
+		// One announcer for every field, so a screen reader hears one count at a time.
+		const announce = Object.assign(document.createElement("p"), { className: "visually-hidden" });
+		announce.setAttribute("aria-live", "polite");
+		(areas[0].form ?? document.body).append(announce);
+		const STEPS = [100, 50, 20, 0];
+		areas.forEach((area) => {
+			const counter = area.nextElementSibling as HTMLElement;
+			let before = area.maxLength - area.value.length;
+			const update = () => {
+				const left = area.maxLength - area.value.length;
+				counter.textContent = left <= 300 ? `${left} characters left` : "";
+				if (STEPS.some((step) => left <= step && before > step)) {
+					announce.textContent = left === 0 ? "No characters left" : `${left} characters left`;
+				}
+				before = left;
+			};
+			area.addEventListener("input", update);
+			update();
+		});
+	}
+</script>
+
+<style>
+	.counter {
+		margin: 0;
+		color: var(--muted);
+		font-size: 0.8125rem;
+		text-align: right;
+	}
+	.counter:empty {
+		display: none;
+	}
+</style>

@@ -1,7 +1,6 @@
 ---
 title: PS5 controller stick drift fix (TMR upgrade)
 order: 1
-price: $25 per stick, or $20 per stick for 4 or more
 perItem:
   item: stick
   price: 25
