@@ -57,8 +57,10 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   tech declines or it expires, and if it failed to go through.
 - If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
   the calendar too: the hold has everything the email would have, including your link.
-- Times are offered between 2 hours and 31 days ahead, on the quarter hour inside each
-  block (`LEAD_HOURS`, `DAYS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
+- Times are offered from 2 hours ahead, on the quarter hour inside each block. The form's row
+  of days shows the next 31 days, and its calendar the current month and the 11 after it; each
+  month is read from the calendars when someone opens it (`GET /slots?month=YYYY-MM`)
+  (`LEAD_HOURS`, `DAYS_AHEAD`, `MONTHS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
   `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same (`npm test` fails if they
   differ).
 
@@ -95,7 +97,13 @@ All free tiers. Do these once.
    out of this public repo.
 
    ```json
-   [{ "name": "Richard", "calendarId": "richard@gmail.com", "email": "richard@example.com" }]
+   [
+     {
+       "name": "Richard",
+       "calendarId": "richard@gmail.com",
+       "email": "richard@example.com"
+     }
+   ]
    ```
 
 5. **Turn the form on:** set `intakeUrl` in `src/site.ts` to the URL `wrangler deploy` printed
@@ -187,6 +195,7 @@ Two defences, neither needing JS:
   over many IPs or locations can still get through; add Turnstile if that starts happening.
   Over-limit posts show up in the worker's logs as `rate limited a request`.
 
-  `GET /slots` has its own limit, **20 fetches a minute** per IP (`SLOTS_LIMITER`), since each one
-  reads every tech's calendar. Past it the worker answers 429, and the form says it couldn't
+  `GET /slots` has its own limit, **40 fetches a minute** per IP (`SLOTS_LIMITER`), since each one
+  reads every tech's calendar. It's higher than the form's own refreshes need because paging
+  through the calendar's months fetches each one. Past it the worker answers 429, and the form says it couldn't
   load the times and points people to Messenger and email. These show up as `rate limited /slots`.

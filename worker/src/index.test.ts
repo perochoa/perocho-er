@@ -21,6 +21,7 @@ const env = {
 	SLOT_MINUTES: 15,
 	LEAD_HOURS: 2,
 	DAYS_AHEAD: 31,
+	MONTHS_AHEAD: 12,
 	RUSH_FEE: 20,
 	RETENTION_DAYS: 180,
 	DEV_ORIGINS: "",
@@ -208,14 +209,64 @@ const submit = (fields: Record<string, string>, headers: Record<string, string> 
 
 test("lists only times when some tech is free", async () => {
 	const response = await worker.fetch(new Request("https://intake.test/slots"), env);
-	const { timeZone, slots } = (await response.json()) as { timeZone: string; slots: { start: string }[] };
+	const { timeZone, daysAhead, slots } = (await response.json()) as { timeZone: string; daysAhead: number; slots: { start: string }[] };
 	assert.equal(timeZone, env.TIME_ZONE);
+	assert.equal(daysAhead, 31);
 	const starts = slots.map((s) => s.start);
 	assert.ok(starts.includes(iso(slotStart)));
 	assert.ok(starts.includes(iso(slotStart + 3 * quarter)));
 	assert.ok(!starts.includes(iso(slotStart + hour)));
 	assert.equal(response.headers.get("Access-Control-Allow-Origin"), env.SITE_URL);
 	assert.equal(response.headers.get("Cache-Control"), "no-cache");
+});
+
+// A month in Toronto, `ahead` from the current one, as /slots?month= takes it.
+const monthOf = (ms: number) =>
+	new Intl.DateTimeFormat("en-CA", { timeZone: "America/Toronto", year: "numeric", month: "2-digit" }).format(ms);
+const monthAhead = (ahead: number) => {
+	const [year, month] = monthOf(Date.now()).split("-").map(Number);
+	return monthOf(Date.UTC(year, month - 1 + ahead, 15));
+};
+const slotsFor = (month: string) => worker.fetch(new Request(`https://intake.test/slots?month=${month}`), env);
+
+test("lists a month's times when asked for one", async () => {
+	// The fixture's Available block runs two weeks from the day before slotStart, so the month after
+	// slotStart's may have a few of them too; none fall outside the asked-for month.
+	const month = monthOf(slotStart);
+	const response = await slotsFor(month);
+	const { monthsAhead, slots } = (await response.json()) as { monthsAhead: number; slots: { start: string }[] };
+	assert.equal(monthsAhead, 12);
+	assert.ok(slots.some((s) => s.start === iso(slotStart)));
+	assert.ok(slots.every((s) => monthOf(Date.parse(s.start)) === month));
+});
+
+test("turns down a month outside the booking window before calling Google", async () => {
+	for (const month of [monthAhead(-1), monthAhead(12), "2026-13", "soon"]) {
+		const response = await slotsFor(month);
+		assert.equal(response.status, 400, month);
+	}
+	assert.deepEqual(fetches, []);
+});
+
+test("takes a time months ahead, in an Available block past DAYS_AHEAD", async () => {
+	const later = Math.ceil((Date.now() + 70 * 24 * hour) / hour) * hour;
+	calendars["sam@example.com"].push({ summary: "Available", start: { dateTime: iso(later) }, end: { dateTime: iso(later + hour) } });
+	const response = await submit({ slot: iso(later) });
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/sent/");
+	assert.deepEqual(holds.map((hold) => hold.calendarId), ["sam@example.com"]);
+	// Only that time's span is read.
+	const read = fetches.map((href) => new URL(href).searchParams).filter((q) => q.has("timeMin"));
+	assert.equal(read.length, 2);
+	assert.ok(read.every((q) => q.get("timeMin") === iso(later) && q.get("timeMax") === iso(later + quarter)));
+});
+
+test("closes a time past the booking window", async () => {
+	const past = Date.now() + 400 * 24 * hour;
+	const start = Math.ceil(past / hour) * hour;
+	calendars["sam@example.com"].push({ summary: "Available", start: { dateTime: iso(start) }, end: { dateTime: iso(start + hour) } });
+	const response = await submit({ slot: iso(start) });
+	assert.equal(response.headers.get("Location"), "https://repairs.perocho.com/request/closed/");
+	assert.equal(holds.length, 0);
 });
 
 const slotsFrom = (origin: string, overrides = {}) =>

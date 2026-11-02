@@ -26,19 +26,21 @@ export interface SlotOptions {
 	now: number;
 	slotMinutes: number;
 	leadHours: number;
-	daysAhead: number;
+	to: number; // epoch ms; no time ends after it
 	timeZone: string; // places all-day blocks' hours
 }
 
-// The options from the worker's vars, as both the worker and scripts/check-techs.ts read them.
+// The options from the worker's vars, as both the worker and scripts/check-techs.ts read them. The
+// window ends DAYS_AHEAD from now unless the caller asks for another, such as a month of it.
 export const slotOptions = (
 	vars: Pick<Env, "SLOT_MINUTES" | "LEAD_HOURS" | "DAYS_AHEAD" | "TIME_ZONE">,
 	now: number,
+	to = now + vars.DAYS_AHEAD * DAY,
 ): SlotOptions => ({
 	now,
 	slotMinutes: vars.SLOT_MINUTES,
 	leadHours: vars.LEAD_HOURS,
-	daysAhead: vars.DAYS_AHEAD,
+	to,
 	timeZone: vars.TIME_ZONE,
 });
 
@@ -92,6 +94,38 @@ function wallClock(date: number, hour: number, timeZone: string) {
 	return local - offset(guess, timeZone);
 }
 
+// The year and month (0-11) it is at a moment in timeZone.
+function monthAt(ms: number, timeZone: string) {
+	const parts = formatter(timeZone).formatToParts(ms);
+	const part = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+	return { year: part("year"), month: part("month") - 1 };
+}
+
+// Midnight on the 1st of a month in timeZone; the month may run past 11 into later years.
+const monthStart = (year: number, month: number, timeZone: string) => wallClock(Date.UTC(year, month, 1), 0, timeZone);
+
+// The end of the booking window: the current month and the monthsAhead - 1 after it, in timeZone.
+export function horizon(now: number, monthsAhead: number, timeZone: string) {
+	const { year, month } = monthAt(now, timeZone);
+	return monthStart(year, month + monthsAhead, timeZone);
+}
+
+// A "YYYY-MM" calendar month in timeZone as the span its times can fall in, from now if it has
+// begun. Null when it isn't one, or is outside the booking window, so nobody can make the worker
+// read calendars for a year of their choosing.
+export function monthWindow(month: string, now: number, monthsAhead: number, timeZone: string) {
+	const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
+	if (!match) return null;
+	const [year, index] = [Number(match[1]), Number(match[2]) - 1];
+	const current = monthAt(now, timeZone);
+	const ahead = (year - current.year) * 12 + index - current.month;
+	if (ahead < 0 || ahead >= monthsAhead) return null;
+	return {
+		from: Math.max(now, monthStart(year, index, timeZone)),
+		to: monthStart(year, index + 1, timeZone),
+	};
+}
+
 // An all-day block as one timed block per day it covers.
 const daytime = (event: CalendarEvent, timeZone: string) => {
 	const days: CalendarEvent[] = [];
@@ -109,7 +143,7 @@ const daytime = (event: CalendarEvent, timeZone: string) => {
 export function openSlots(eventsByTech: CalendarEvent[][], options: SlotOptions): Slot[] {
 	const length = options.slotMinutes * MINUTE;
 	const earliest = options.now + options.leadHours * HOUR;
-	const latest = options.now + options.daysAhead * DAY;
+	const latest = options.to;
 	const slots = new Map<number, Slot>();
 
 	eventsByTech.forEach((events, tech) => {

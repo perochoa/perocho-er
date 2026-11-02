@@ -1,5 +1,7 @@
 // Intake for repairs.perocho.com.
-//   GET  /slots          open drop-off times in the techs' "Available" blocks, for the form's time list
+//   GET  /slots          open drop-off times in the techs' "Available" blocks, for the form's time list:
+//                        the next DAYS_AHEAD days, or with ?month=YYYY-MM that month, if it's one of
+//                        the next MONTHS_AHEAD
 //   POST /request        the form; holds the picked time on every free tech's calendar, offers it to
 //                        every tech by email and tells the customer, then redirects back to the
 //                        site (the form works without JS)
@@ -14,18 +16,19 @@ import { accessToken, createEvent, deleteEvent, listEvents } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
 import { act, expire, page, queue } from "./offers.ts";
-import { openSlots, type Slot, slotOptions } from "./slots.ts";
+import { horizon, monthWindow, openSlots, type Slot, slotOptions } from "./slots.ts";
 import { parseTechs, type Tech } from "./techs.ts";
 
 // Env comes from worker-configuration.d.ts (`npm run types` after changing wrangler.jsonc).
 
-async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS)) {
-	const options = slotOptions(env, Date.now());
-	const to = options.now + options.daysAhead * 86_400_000;
+// The open times from now (or `from`, if later) until `to`. The calendars are only read for that
+// span, so a narrow one is cheap.
+async function findSlots(env: Env, token: string, techs: Tech[], from: number, to: number) {
+	const options = slotOptions(env, Date.now(), to);
 	// A calendar that can't be read (unshared, or a wrong calendarId in TECHS) costs that tech their
 	// times, not everyone's. The log names the tech; only when no calendar can be read is it an error.
 	const results = await Promise.allSettled(
-		techs.map((tech) => listEvents(token, tech.calendarId, options.now, to)),
+		techs.map((tech) => listEvents(token, tech.calendarId, Math.max(options.now, from), to)),
 	);
 	const events = results.map((result, i) => {
 		if (result.status === "fulfilled") return result.value;
@@ -36,7 +39,7 @@ async function findSlots(env: Env, token: string, techs = parseTechs(env.TECHS))
 	return { techs, slots: openSlots(events, options) };
 }
 
-async function slots(env: Env, origin: string | null, ip: string | null): Promise<Response> {
+async function slots(env: Env, month: string | null, origin: string | null, ip: string | null): Promise<Response> {
 	// Each fetch costs a Google call per tech, so cap it per visitor. The form treats any non-OK
 	// response as no times to pick, and points people to Messenger and email instead.
 	const { success } = await env.SLOTS_LIMITER.limit({ key: ip ?? "unknown" });
@@ -44,11 +47,20 @@ async function slots(env: Env, origin: string | null, ip: string | null): Promis
 		console.warn("rate limited /slots");
 		return new Response("Too many requests", { status: 429 });
 	}
+	// No month is the next DAYS_AHEAD days, for the form's week of days; a month is for its calendar.
+	const now = Date.now();
+	const window = month === null ? { from: now, to: slotOptions(env, now).to } : monthWindow(month, now, env.MONTHS_AHEAD, env.TIME_ZONE);
+	if (!window) return new Response("No such month to book in", { status: 400 });
 	const allowed = [env.SITE_URL, ...env.DEV_ORIGINS.split(",").map((o) => o.trim()).filter(Boolean)];
-	const { slots: open } = await findSlots(env, await accessToken(env.GOOGLE_SERVICE_ACCOUNT));
+	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
+	const { slots: open } = await findSlots(env, token, parseTechs(env.TECHS), window.from, window.to);
 	return Response.json(
 		{
 			timeZone: env.TIME_ZONE,
+			// How far the form's row of days goes, and how many months its calendar may show,
+			// counting the current one.
+			daysAhead: env.DAYS_AHEAD,
+			monthsAhead: env.MONTHS_AHEAD,
 			slots: open.map(({ start, end }) => ({ start: new Date(start), end: new Date(end) })),
 		},
 		{
@@ -126,8 +138,11 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 	const offers: Offer[] = techs.map((tech) => ({ token: crypto.randomUUID(), tech, holdId: null }));
 	const link = (offer: Offer) => `${origin}/offers/${offer.token}`;
 
+	// Only the picked time's own span is read, wherever it is in the booking window. A time past the
+	// window has nothing to read, so it's closed.
 	const token = await accessToken(env.GOOGLE_SERVICE_ACCOUNT);
-	const slot = (await findSlots(env, token, techs)).slots.find((s) => s.start === intake.slot);
+	const end = Math.min(intake.slot + env.SLOT_MINUTES * 60_000, horizon(Date.now(), env.MONTHS_AHEAD, env.TIME_ZONE));
+	const slot = (await findSlots(env, token, techs, intake.slot, end)).slots.find((s) => s.start === intake.slot);
 	if (!slot) return "closed";
 
 	// Every tech free then gets a hold, so they can all plan around it until one takes it.
@@ -207,10 +222,11 @@ const QUEUE = /^\/offers\/([0-9a-f-]{36})\/queue$/;
 
 export default {
 	async fetch(req: Request, env: Env): Promise<Response> {
-		const { pathname } = new URL(req.url);
+		const { pathname, searchParams } = new URL(req.url);
 		try {
 			if (req.method === "GET" && pathname === "/slots") {
-				return await slots(env, req.headers.get("Origin"), req.headers.get("CF-Connecting-IP"));
+				const month = searchParams.get("month");
+				return await slots(env, month, req.headers.get("Origin"), req.headers.get("CF-Connecting-IP"));
 			}
 			if (req.method === "POST" && pathname === "/request") {
 				const ip = req.headers.get("CF-Connecting-IP");

@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { type CalendarEvent, isAvailable, openSlots } from "./slots.ts";
+import { type CalendarEvent, horizon, isAvailable, monthWindow, openSlots } from "./slots.ts";
 
 // Monday 2 November 2026, Toronto (EST, -05:00).
 const at = (time: string, date = "2026-11-02") => Date.parse(`${date}T${time}:00-05:00`);
 const now = at("00:00");
+const day = 86_400_000;
 const options = {
 	now,
 	slotMinutes: 60,
 	leadHours: 2,
-	daysAhead: 1,
+	to: now + day,
 	timeZone: "America/Toronto",
 };
 
@@ -74,7 +75,7 @@ test("an all-day Available block offers 9 a.m. to 7 p.m. in the worker's zone", 
 
 test("an all-day Available block over several days offers each day, across a clock change", () => {
 	// Toronto leaves daylight time early on Sunday 1 November.
-	const times = starts([[allDay("2026-10-31", "2026-11-02")]], { now: Date.parse("2026-10-31T00:00:00-04:00"), daysAhead: 3 }).map(([start]) => start);
+	const times = starts([[allDay("2026-10-31", "2026-11-02")]], { now: Date.parse("2026-10-31T00:00:00-04:00"), to: Date.parse("2026-10-31T00:00:00-04:00") + 3 * day }).map(([start]) => start);
 	assert.equal(times.length, 20);
 	assert.equal(times[0], "2026-10-31T13:00:00.000Z"); // 9:00 EDT
 	assert.equal(times[10], "2026-11-01T14:00:00.000Z"); // 9:00 EST
@@ -183,5 +184,32 @@ test("respects the notice period and the horizon", () => {
 	assert.deepEqual(starts([[available("09:00", "12:00")]], { leadHours: 11 }), [["2026-11-02T16:00:00.000Z", [0]]]);
 	const late = { ...available("09:00", "10:00"), start: at("09:00", "2026-11-03"), end: at("10:00", "2026-11-03") };
 	assert.deepEqual(starts([[late]]), []);
-	assert.equal(starts([[late]], { daysAhead: 2 }).length, 1);
+	assert.equal(starts([[late]], { to: now + 2 * day }).length, 1);
+});
+
+test("a month is its span in the worker's zone, from now if it has begun", () => {
+	const zone = "America/Toronto";
+	const noon = at("12:00");
+	assert.deepEqual(monthWindow("2026-11", noon, 12, zone), { from: noon, to: Date.parse("2026-12-01T00:00:00-05:00") });
+	// March has the clocks going forward, so it starts in standard time and ends in daylight time.
+	assert.deepEqual(monthWindow("2027-03", noon, 12, zone), {
+		from: Date.parse("2027-03-01T00:00:00-05:00"),
+		to: Date.parse("2027-04-01T00:00:00-04:00"),
+	});
+	// December runs into the next year.
+	assert.equal(monthWindow("2026-12", noon, 12, zone)!.to, Date.parse("2027-01-01T00:00:00-05:00"));
+	// Late on 31 October in Toronto is November in UTC, but still October here.
+	const halloween = Date.parse("2026-10-31T22:00:00-04:00");
+	assert.equal(monthWindow("2026-10", halloween, 12, zone)!.from, halloween);
+});
+
+test("only months in the booking window have a span", () => {
+	const zone = "America/Toronto";
+	assert.equal(monthWindow("2026-10", now, 12, zone), null); // already over
+	assert.notEqual(monthWindow("2027-10", now, 12, zone), null); // the 12th
+	assert.equal(monthWindow("2027-11", now, 12, zone), null);
+	for (const bad of ["2026-13", "2026-1", "2026-00", "11-2026", "", "2026-11-02"]) {
+		assert.equal(monthWindow(bad, now, 12, zone), null, bad);
+	}
+	assert.equal(horizon(now, 12, zone), Date.parse("2027-11-01T00:00:00-04:00"));
 });
