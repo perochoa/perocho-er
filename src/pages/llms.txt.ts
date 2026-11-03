@@ -1,4 +1,5 @@
 import type { APIRoute } from "astro";
+import { getRepairs, monthFormat } from "../repairs";
 import { marketplace } from "../reviews";
 import { getServices, priceText } from "../services";
 import { paymentText, site } from "../site";
@@ -8,6 +9,7 @@ import { paymentText, site } from "../site";
 export const GET: APIRoute = async ({ site: origin }) => {
 	const link = (path: string) => new URL(path, origin).href;
 	const services = await getServices();
+	const repairs = await getRepairs();
 	const lines = [
 		`# ${site.name}`,
 		"",
@@ -26,6 +28,19 @@ export const GET: APIRoute = async ({ site: origin }) => {
 			(body ?? "").trim(),
 			"",
 		]),
+		...(repairs.length
+			? [
+					"## Past repairs",
+					"",
+					`Before-and-after photos: ${link("/repairs/")}`,
+					"",
+					...repairs.map(
+						({ data, body }) =>
+							`- ${data.title} (${data.device}, ${monthFormat.format(data.date)}): ${(body ?? "").trim().replaceAll("\n", " ")}`,
+					),
+					"",
+				]
+			: []),
 		"## How to get a repair",
 		"",
 		...(site.intakeUrl
@@ -51,6 +66,7 @@ export const GET: APIRoute = async ({ site: origin }) => {
 		"## Pages",
 		"",
 		`- [Home](${link("/")}): services, prices, reviews and contact details`,
+		...(repairs.length ? [`- [Past repairs](${link("/repairs/")}): before-and-after photos of past repairs`] : []),
 		...(site.intakeUrl ? [`- [Request a repair](${link("/request/")}): the repair request form`] : []),
 		"",
 	];

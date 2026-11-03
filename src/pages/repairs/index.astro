@@ -1,0 +1,44 @@
+---
+import Contact from "../../components/Contact.astro";
+import RepairCard from "../../components/RepairCard.astro";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import "../../styles/sections.css";
+import { getRepairs } from "../../repairs";
+import { site } from "../../site";
+
+const repairs = await getRepairs();
+---
+
+<BaseLayout
+	title={`Past repairs · ${site.name}`}
+	description={`Before-and-after photos of PS5 repairs from ${site.name} in ${site.city}: dust cleanouts, liquid metal and HDMI ports.`}
+>
+	<main>
+		<section class="band" aria-labelledby="repairs-title">
+			<div class="wrap">
+				<p class="eyebrow">Past repairs</p>
+				<h1 id="repairs-title">Before and after</h1>
+				<p class="lede">Photos from consoles that came through the shop, taken while we worked on them.</p>
+				<ul class="cards">
+					{repairs.map((repair, i) => <RepairCard repair={repair} i={i} />)}
+				</ul>
+			</div>
+		</section>
+		<Contact />
+	</main>
+</BaseLayout>
+
+<script>
+	import "../../scripts/card-glow";
+</script>
+
+<style>
+	h1 {
+		margin: 0 0 1rem;
+	}
+	.lede {
+		max-width: 40rem;
+		margin: 0 0 2rem;
+		color: var(--muted);
+	}
+</style>

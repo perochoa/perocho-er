@@ -4,15 +4,17 @@ import Logo from "./Logo.astro";
 import { marketplace } from "../reviews";
 import { site } from "../site";
 
-// Links point at "/#..." so they also work from the 404 page.
+// Section links point at "/#..." so they also work from the other pages.
 const hasRepairs = (await getCollection("repairs")).length > 0;
 const links = [
 	{ href: "/#services", label: "Services" },
 	...(marketplace ? [{ href: "/#reviews", label: "Reviews" }] : []),
 	{ href: "/#how", label: "How it works" },
-	...(hasRepairs ? [{ href: "/#repairs", label: "Past repairs" }] : []),
+	...(hasRepairs ? [{ href: "/repairs/", label: "Past repairs" }] : []),
 	{ href: "/#contact", label: "Contact" },
 ];
+// A page link is marked on its own page; the script below marks section links as they scroll by.
+const current = (href: string) => (href === Astro.url.pathname ? "page" : undefined);
 ---
 
 <header class="site-header">
@@ -22,7 +24,7 @@ const links = [
 			<span>Perocho <span class="accent">Repairs</span></span>
 		</a>
 		<nav aria-label="Sections">
-			{links.map((link) => <a href={link.href}>{link.label}</a>)}
+			{links.map((link) => <a href={link.href} aria-current={current(link.href)}>{link.label}</a>)}
 		</nav>
 		<a class="button small" href={site.messengerUrl}>Message us</a>
 		<!-- Phones: the same links in a dropdown; <details> opens it without JS. -->
@@ -31,7 +33,7 @@ const links = [
 				<span class="bars" aria-hidden="true"><span></span><span></span><span></span></span>
 			</summary>
 			<nav aria-label="Sections">
-				{links.map((link) => <a href={link.href}>{link.label}</a>)}
+				{links.map((link) => <a href={link.href} aria-current={current(link.href)}>{link.label}</a>)}
 				{site.intakeUrl && <a href="/request/">Request a repair</a>}
 			</nav>
 		</details>

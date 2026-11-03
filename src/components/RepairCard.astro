@@ -1,0 +1,57 @@
+---
+// One past repair: its before and after photos and what was done. Home page and /repairs/.
+import { Image } from "astro:assets";
+import { type CollectionEntry, render } from "astro:content";
+import { monthFormat } from "../repairs";
+
+interface Props {
+	repair: CollectionEntry<"repairs">;
+	// Its place in the list, to stagger the scroll-in.
+	i: number;
+}
+
+const { repair, i } = Astro.props;
+const { data } = repair;
+const { Content } = await render(repair);
+---
+
+<li class="card" data-reveal style={`--i: ${i}`}>
+	<h3>{data.title}</h3>
+	<p class="meta">
+		{data.device} · <time datetime={data.date.toISOString()}>{monthFormat.format(data.date)}</time>
+	</p>
+	<div class="photos">
+		<figure>
+			<Image src={data.before} alt={data.beforeAlt} width={400} />
+			<figcaption>Before</figcaption>
+		</figure>
+		<figure>
+			<Image src={data.after} alt={data.afterAlt} width={400} />
+			<figcaption>After</figcaption>
+		</figure>
+	</div>
+	<Content />
+</li>
+
+<style>
+	.meta,
+	figcaption {
+		color: var(--muted);
+	}
+	.photos {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 0.5rem;
+	}
+	figure {
+		margin: 0;
+	}
+	figure :global(img) {
+		display: block;
+		width: 100%;
+		height: auto;
+		aspect-ratio: 4 / 3;
+		object-fit: cover;
+		border-radius: 0.375rem;
+	}
+</style>
