@@ -1,4 +1,5 @@
-# Photos from the bench that aren't a before-and-after pair, shown on /repairs/ newest first.
+# Photos and clips from the bench that aren't a before-and-after pair, shown on /repairs/ newest first.
+# A clip's `photo` is its poster frame.
 # Keep them to the device (no faces, rooms or screens with personal details) and strip location data
 # before committing: the repo is public.
 
@@ -7,6 +8,13 @@ trace-jumper-wire:
   alt: Magnified HDMI port pads on a PS5 board, with a thin copper wire bridging the last one.
   caption: A fine wire bridging a torn trace at the HDMI port.
   date: 2026-11-01
+
+hdmi-port-microscope:
+  photo: ./hdmi-port-microscope.jpg
+  video: /videos/hdmi-port-microscope.mp4
+  alt: Microscope video of a damaged HDMI port's pins on a PS5 board, with a probe tracing along them.
+  caption: A damaged HDMI port, live under the microscope.
+  date: 2026-09-27
 
 fan-intake-dust:
   photo: ./fan-intake-dust.jpg
@@ -68,11 +76,25 @@ controllers-opened:
   caption: Six DualSense controllers opened up on the bench.
   date: 2026-07-05
 
+stick-test-black:
+  photo: ./stick-test-black.jpg
+  video: /videos/stick-test-black.mp4
+  alt: A black DualSense held in front of a stick test on screen, the dots following each stick and settling back in the centre.
+  caption: Testing a DualSense's sticks before it goes back.
+  date: 2026-06-30
+
 red-dualsense:
   photo: ./red-dualsense.jpg
   alt: A red and black DualSense controller on a desk mat, its light bar glowing.
   caption: Red DualSense, back together.
   date: 2026-06-25
+
+stick-test-red:
+  photo: ./stick-test-red.jpg
+  video: /videos/stick-test-red.mp4
+  alt: A red DualSense held in front of a stick test on screen, the dots following each stick to the edge and back.
+  caption: Each stick pushed to the edge and back on the test screen.
+  date: 2026-06-12
 
 black-dualsense:
   photo: ./black-dualsense.jpg

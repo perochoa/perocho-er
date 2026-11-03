@@ -1,13 +1,18 @@
 ---
-// /repairs/: single photos from the bench, newest first. Each opens full size. Shows nothing until
-// there are any.
+// /repairs/: single photos and clips from the bench, newest first. Photos open full size; clips play
+// in place, muted, and only load when played. Shows nothing until there are any.
 import { getImage, Image } from "astro:assets";
 import { getCollection } from "astro:content";
 
 const photos = await Promise.all(
 	(await getCollection("gallery"))
 		.sort((a, b) => b.data.date.valueOf() - a.data.date.valueOf())
-		.map(async ({ id, data }) => ({ id, ...data, full: await getImage({ src: data.photo, width: 1600 }) })),
+		.map(async ({ id, data }) => ({
+			id,
+			...data,
+			// A clip's poster, or the photo's full-size link.
+			full: await getImage({ src: data.photo, width: data.video ? 720 : 1600 }),
+		})),
 );
 ---
 
@@ -20,12 +25,25 @@ const photos = await Promise.all(
 					<h2 id="gallery-title">From the bench</h2>
 				</div>
 				<ul class="grid">
-					{photos.map(({ id, photo, alt, caption, full }, i) => (
+					{photos.map(({ id, photo, alt, caption, video, full }, i) => (
 						<li data-reveal style={`--i: ${i % 4}`}>
 							<figure>
-								<a href={full.src} aria-describedby={`${id}-caption`}>
-									<Image src={photo} alt={alt} width={480} />
-								</a>
+								{video ? (
+									<video
+										src={video}
+										poster={full.src}
+										aria-label={alt}
+										aria-describedby={`${id}-caption`}
+										controls
+										muted
+										playsinline
+										preload="none"
+									/>
+								) : (
+									<a href={full.src} aria-describedby={`${id}-caption`}>
+										<Image src={photo} alt={alt} width={480} />
+									</a>
+								)}
 								<figcaption id={`${id}-caption`}>{caption}</figcaption>
 							</figure>
 						</li>
@@ -70,6 +88,17 @@ const photos = await Promise.all(
 		a:hover :global(img) {
 			scale: 1.04;
 		}
+	}
+	/* Clips are portrait: shown whole in the same 4:3 tile, on a dark backdrop. */
+	video {
+		display: block;
+		width: 100%;
+		aspect-ratio: 4 / 3;
+		object-fit: contain;
+		background: #0e1514;
+		border: 1px solid var(--line);
+		border-radius: 0.5rem;
+		box-sizing: border-box;
 	}
 	figcaption {
 		margin-top: 0.5rem;

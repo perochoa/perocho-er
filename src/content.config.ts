@@ -39,8 +39,9 @@ const repairs = defineCollection({
 		}),
 });
 
-// Single photos from the bench that aren't a before-and-after pair: src/content/gallery/gallery.yaml,
-// with the photos beside it. Same rules as repairs: device only, location data stripped.
+// Single photos and short clips from the bench that aren't a before-and-after pair:
+// src/content/gallery/gallery.yaml, with the photos beside it. Same rules as repairs: device only,
+// location data stripped.
 const gallery = defineCollection({
 	loader: file("./src/content/gallery/gallery.yaml"),
 	schema: ({ image }) =>
@@ -49,6 +50,9 @@ const gallery = defineCollection({
 			alt: z.string(),
 			caption: z.string(),
 			date: z.coerce.date(),
+			// A clip in public/ ("/videos/....mp4"), muted, with `photo` as its poster. Re-encode clips
+			// small and without metadata: ffmpeg -map_metadata -1 -an, 720 wide, H.264.
+			video: z.string().optional(),
 		}),
 });
 
