@@ -1,5 +1,5 @@
 import { defineCollection } from "astro:content";
-import { glob } from "astro/loaders";
+import { file, glob } from "astro/loaders";
 import { z } from "astro/zod";
 
 const services = defineCollection({
@@ -39,4 +39,17 @@ const repairs = defineCollection({
 		}),
 });
 
-export const collections = { services, repairs };
+// Single photos from the bench that aren't a before-and-after pair: src/content/gallery/gallery.yaml,
+// with the photos beside it. Same rules as repairs: device only, location data stripped.
+const gallery = defineCollection({
+	loader: file("./src/content/gallery/gallery.yaml"),
+	schema: ({ image }) =>
+		z.object({
+			photo: image(),
+			alt: z.string(),
+			caption: z.string(),
+			date: z.coerce.date(),
+		}),
+});
+
+export const collections = { services, repairs, gallery };
