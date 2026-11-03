@@ -16,6 +16,7 @@ import { accessToken, createEvent, deleteEvent, listEvents } from "./google.ts";
 import { formatTime, type Intake, parseIntake } from "./intake.ts";
 import * as notices from "./notices.ts";
 import { act, expire, page, queue } from "./offers.ts";
+import type { Outcome } from "./outcomes.ts";
 import { horizon, monthWindow, openSlots, type Slot, slotOptions } from "./slots.ts";
 import { parseTechs, type Tech } from "./techs.ts";
 
