@@ -1,5 +1,6 @@
 ---
 title: PS5 HDMI port replacement
+photo: ../gallery/removed-hdmi-port.jpg
 order: 3
 price: $70, or $100 with a deep cleaning
 ---

@@ -1,5 +1,6 @@
 ---
-// Home page: the service cards, with a price calculator on per-item ones.
+// Home page: the service cards, with a photo across the top and a price calculator on per-item ones.
+import { Image } from "astro:assets";
 import { type CollectionEntry, render } from "astro:content";
 import { priceText } from "../services";
 import { site } from "../site";
@@ -23,6 +24,7 @@ const renderedServices = await Promise.all(
 			{
 				renderedServices.map(({ id, data, Content }, i) => (
 					<li class="card" data-reveal style={`--i: ${i}`}>
+						{data.photo && <Image class="photo" src={data.photo} alt="" width={720} />}
 						<h3>{data.title}</h3>
 						<div class="body">
 							<Content />
@@ -110,6 +112,17 @@ const renderedServices = await Promise.all(
 </script>
 
 <style>
+	/* Bleeds to the card's edges and fades out under the title, so the text never sits on the photo. */
+	.card :global(.photo) {
+		display: block;
+		width: calc(100% + 3rem);
+		max-width: none;
+		height: 10rem;
+		margin: -1.5rem -1.5rem -1.5rem;
+		object-fit: cover;
+		border-radius: calc(0.75rem - 1px) calc(0.75rem - 1px) 0 0;
+		mask-image: linear-gradient(to bottom, #000 30%, transparent 85%);
+	}
 	.card .body {
 		flex: 1;
 		color: var(--muted);

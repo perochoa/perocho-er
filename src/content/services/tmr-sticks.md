@@ -1,5 +1,6 @@
 ---
 title: PS5 controller stick drift fix (TMR upgrade)
+photo: ../gallery/tmr-board.jpg
 order: 1
 perItem:
   item: stick

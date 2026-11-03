@@ -4,23 +4,27 @@ import { z } from "astro/zod";
 
 const services = defineCollection({
 	loader: glob({ pattern: "*.md", base: "./src/content/services" }),
-	schema: z.object({
-		title: z.string(),
-		order: z.number(),
-		// Free text, not a number: prices carry bundles ("$70, or $100 with..."). Leave it and
-		// `perItem` unset to show "Message us for a quote".
-		price: z.string().optional(),
-		// Per-item pricing for the card's price calculator. Without `price`, the card's price line is
-		// built from it: "$25 per stick, or $20 per stick for 4 or more".
-		perItem: z
-			.object({
-				item: z.string(),
-				price: z.number(),
-				bulkPrice: z.number(),
-				bulkFrom: z.number(),
-			})
-			.optional(),
-	}),
+	schema: ({ image }) =>
+		z.object({
+			title: z.string(),
+			order: z.number(),
+			// A photo across the top of the card, fading into it. Decorative: the card's text says it all.
+			// Point at one already in the repo (../gallery/...) rather than adding a copy.
+			photo: image().optional(),
+			// Free text, not a number: prices carry bundles ("$70, or $100 with..."). Leave it and
+			// `perItem` unset to show "Message us for a quote".
+			price: z.string().optional(),
+			// Per-item pricing for the card's price calculator. Without `price`, the card's price line is
+			// built from it: "$25 per stick, or $20 per stick for 4 or more".
+			perItem: z
+				.object({
+					item: z.string(),
+					price: z.number(),
+					bulkPrice: z.number(),
+					bulkFrom: z.number(),
+				})
+				.optional(),
+		}),
 });
 
 // One folder per repair: src/content/repairs/yyyy-mm-<slug>/index.md, with its photos beside it.
