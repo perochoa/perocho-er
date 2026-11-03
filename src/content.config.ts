@@ -14,8 +14,8 @@ const services = defineCollection({
 			// Free text, not a number: prices carry bundles ("$70, or $100 with..."). Leave it and
 			// `perItem` unset to show "Message us for a quote".
 			price: z.string().optional(),
-			// Per-item pricing for the card's price calculator. Without `price`, the card's price line is
-			// built from it: "$25 per stick, or $20 per stick for 4 or more".
+			// Per-item pricing. Without `price`, the card's price line is built from it: "$25 per stick,
+			// or $20 per stick for 4 or more".
 			perItem: z
 				.object({
 					item: z.string(),

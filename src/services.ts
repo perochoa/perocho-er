@@ -6,7 +6,8 @@ export type Service = CollectionEntry<"services">;
 export const getServices = async () =>
 	(await getCollection("services")).sort((a, b) => a.data.order - b.data.order);
 
-// Per-item services build their price line from the calculator's numbers, so the two can't disagree.
+// Per-item services build their price line from their numbers, so the line and the JSON-LD price
+// can't disagree.
 export const priceText = ({ price, perItem }: Service["data"]) =>
 	price ??
 	(perItem
