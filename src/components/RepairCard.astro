@@ -1,6 +1,7 @@
 ---
-// One past repair: its before and after photos and what was done. Home page and /repairs/.
-import { Image } from "astro:assets";
+// One past repair: its before and after photos (each opens full size) and what was done. Home page
+// and /repairs/.
+import { getImage, Image } from "astro:assets";
 import { type CollectionEntry, render } from "astro:content";
 import { monthFormat } from "../repairs";
 
@@ -13,6 +14,11 @@ interface Props {
 const { repair, i } = Astro.props;
 const { data } = repair;
 const { Content } = await render(repair);
+const photos = [
+	{ label: "Before", src: data.before, alt: data.beforeAlt },
+	{ label: "After", src: data.after, alt: data.afterAlt },
+];
+const full = await Promise.all(photos.map(({ src }) => getImage({ src, width: 1600 })));
 ---
 
 <li class="card" data-reveal style={`--i: ${i}`}>
@@ -21,14 +27,16 @@ const { Content } = await render(repair);
 		{data.device} · <time datetime={data.date.toISOString()}>{monthFormat.format(data.date)}</time>
 	</p>
 	<div class="photos">
-		<figure>
-			<Image src={data.before} alt={data.beforeAlt} width={400} />
-			<figcaption>Before</figcaption>
-		</figure>
-		<figure>
-			<Image src={data.after} alt={data.afterAlt} width={400} />
-			<figcaption>After</figcaption>
-		</figure>
+		{
+			photos.map(({ label, src, alt }, n) => (
+				<figure>
+					<a href={full[n].src}>
+						<Image src={src} alt={alt} width={600} />
+					</a>
+					<figcaption>{label}</figcaption>
+				</figure>
+			))
+		}
 	</div>
 	<Content />
 </li>
@@ -45,6 +53,9 @@ const { Content } = await render(repair);
 	}
 	figure {
 		margin: 0;
+	}
+	figure a {
+		display: block;
 	}
 	figure :global(img) {
 		display: block;
