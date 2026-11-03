@@ -1,6 +1,6 @@
 ---
 // Home page: how a repair goes, from request to pickup.
-import { site } from "../site";
+import { paymentText, site } from "../site";
 
 // Matches what the request form and the worker's emails tell customers.
 const steps = site.intakeUrl
@@ -19,14 +19,14 @@ const steps = site.intakeUrl
 			},
 			{
 				title: "Drop it off",
-				text: "Bring it in at your drop-off time. We work in order, rush first, and agree with you on when it'll be ready. Pay by cash or Interac e-Transfer at pickup.",
+				text: `Bring it in at your drop-off time. We work in order, rush first, and agree with you on when it'll be ready. Pay by ${paymentText} at pickup.`,
 			},
 		]
 	: [
 			{ title: "Message us", text: "On Messenger or by email, about your device and what's wrong." },
 			{ title: "Get a quote", text: "We reply with a price and a time to drop it off." },
 			{ title: "Drop it off", text: "Bring it in at the time we agreed. We'll tell you when it'll be ready." },
-			{ title: "Pay on pickup", text: "By cash or Interac e-Transfer." },
+			{ title: "Pay on pickup", text: `By ${paymentText}.` },
 		];
 ---
 

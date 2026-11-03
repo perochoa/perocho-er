@@ -1,4 +1,27 @@
+# Every crawler is welcome, AI ones included. They're named so the welcome is on purpose, and so
+# a new rule for one of them has somewhere to go. /llms.txt has the site in Markdown for them.
 User-agent: *
+Allow: /
+
+# Search and answer engines
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: Claude-SearchBot
+User-agent: Claude-User
+User-agent: PerplexityBot
+User-agent: Perplexity-User
+User-agent: Applebot
+User-agent: DuckAssistBot
+User-agent: Amazonbot
+Allow: /
+
+# Model training
+User-agent: GPTBot
+User-agent: ClaudeBot
+User-agent: Google-Extended
+User-agent: Applebot-Extended
+User-agent: CCBot
+User-agent: Meta-ExternalAgent
 Allow: /
 
 Sitemap: https://repairs.perocho.com/sitemap.xml

@@ -1,4 +1,5 @@
 // The intake form: parsing, validation and the summary every email and event about it shows.
+import { zonedFormat } from "./slots.ts";
 
 export interface Intake {
 	name: string;
@@ -63,24 +64,15 @@ export function parseIntake(form: FormData, rushFee: number): Parsed {
 	return { ok: true, intake: { ...fields, slot, rush: form.get("rush") === "1" ? rushFee : 0 } };
 }
 
-// One formatter per time zone, as in slots.ts.
-const formatters = new Map<string, Intl.DateTimeFormat>();
+const formatter = zonedFormat("en-CA", {
+	weekday: "short",
+	month: "short",
+	day: "numeric",
+	hour: "numeric",
+	minute: "2-digit",
+});
 
-export function formatTime(ms: number, timeZone: string): string {
-	let format = formatters.get(timeZone);
-	if (!format) {
-		format = new Intl.DateTimeFormat("en-CA", {
-			timeZone,
-			weekday: "short",
-			month: "short",
-			day: "numeric",
-			hour: "numeric",
-			minute: "2-digit",
-		});
-		formatters.set(timeZone, format);
-	}
-	return format.format(ms);
-}
+export const formatTime = (ms: number, timeZone: string): string => formatter(timeZone).format(ms);
 
 // Ends a sentence on a time without doubling the period of "a.m." and "p.m.".
 export const stop = (time: string) => (time.endsWith(".") ? time : `${time}.`);

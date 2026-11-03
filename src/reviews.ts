@@ -1,7 +1,8 @@
+import { site } from "./site";
+
 // From the Marketplace profile (url). Update by hand now and then. Quotes have spelling, grammar
 // and punctuation fixed, but keep the buyer's words and meaning: don't add claims they didn't make.
-// Unset hides the reviews and every link to Marketplace. The page shows the profile's "Highly rated"
-// badge (Marketplace gives it for 4.5 stars or higher from at least 5 buyers).
+// Unset hides the reviews and every link to Marketplace.
 
 interface Review {
 	// First name only, as Marketplace shows it.
@@ -22,8 +23,15 @@ interface Marketplace {
 	reviews: Review[];
 }
 
+// The "Highly rated" badge, shown only while the numbers earn it: Marketplace gives it for 4.5 stars
+// or higher from at least 5 buyers.
+export const highlyRated = (m: Marketplace) => m.stars >= 4.5 && m.ratings >= 5;
+
+// A rating in whole stars, rounded: 4.8 draws five.
+export const starRow = (stars: number) => "★".repeat(Math.round(stars));
+
 export const marketplace: Marketplace | undefined = {
-	url: "https://www.facebook.com/marketplace/profile/1786877701",
+	url: `https://www.facebook.com/marketplace/profile/${site.facebookId}`,
 	stars: 5,
 	ratings: 75,
 	strengths: [

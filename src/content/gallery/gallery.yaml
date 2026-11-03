@@ -1,0 +1,115 @@
+# Photos and clips from the bench that aren't a before-and-after pair, shown on /repairs/ newest first.
+# A clip's `photo` is its poster frame.
+# Keep them to the device (no faces, rooms or screens with personal details) and strip location data
+# before committing: the repo is public.
+
+trace-jumper-wire:
+  photo: ./trace-jumper-wire.jpg
+  alt: Magnified HDMI port pads on a PS5 board, with a thin copper wire bridging the last one.
+  caption: A fine wire bridging a torn trace at the HDMI port.
+  date: 2026-11-01
+
+hdmi-port-microscope:
+  photo: ./hdmi-port-microscope.jpg
+  video: /videos/hdmi-port-microscope.mp4
+  alt: Microscope video of a damaged HDMI port's pins on a PS5 board, with a probe tracing along them.
+  caption: A damaged HDMI port, live under the microscope.
+  date: 2026-09-27
+
+fan-intake-dust:
+  photo: ./fan-intake-dust.jpg
+  alt: Inside a PS5 with the cover off, the ring around the fan thick with brown dust.
+  caption: Dust packed around a PS5's fan.
+  date: 2026-09-20
+
+fan-matted-dust:
+  photo: ./fan-matted-dust.jpg
+  alt: A PS5 fan guard covered in strands of matted dust.
+  caption: Dust matted over the fan guard.
+  date: 2026-09-20
+
+heatsink-dust:
+  photo: ./heatsink-dust.jpg
+  alt: A PS5 heatsink lifted out, its fins lined with grey dust.
+  caption: Dust caught in the heatsink fins.
+  date: 2026-09-18
+
+tmr-sticks:
+  photo: ./tmr-sticks.jpg
+  alt: A parts box holding blue TMR stick modules.
+  caption: TMR sticks, ready to fit.
+  date: 2026-08-29
+
+heat-pipe-dust:
+  photo: ./heat-pipe-dust.jpg
+  alt: Inside a PS5, dust built up along the heatsink and heat pipes beside the fan.
+  caption: Dust along the heatsink and heat pipes.
+  date: 2026-08-07
+
+hdmi-pins-microscope:
+  photo: ./hdmi-pins-microscope.jpg
+  alt: A monitor showing a magnified view of an HDMI port's pins soldered to a PS5 board.
+  caption: HDMI port pins under the microscope.
+  date: 2026-08-02
+
+tmr-board:
+  photo: ./tmr-board.jpg
+  alt: A DualSense circuit board with two blue TMR stick modules soldered on.
+  caption: A DualSense board with its new TMR sticks.
+  date: 2026-07-20
+
+removed-hdmi-port:
+  photo: ./removed-hdmi-port.jpg
+  alt: A monitor showing a magnified, corroded HDMI port that has been taken off a board.
+  caption: A damaged HDMI port, taken off and under the microscope.
+  date: 2026-07-13
+
+ps5-slim-ports:
+  photo: ./ps5-slim-ports.jpg
+  alt: Close-up of the back of a white PS5 Slim, showing its HDMI port.
+  caption: The HDMI port on a PS5 Slim.
+  date: 2026-07-06
+
+controllers-opened:
+  photo: ./controllers-opened.jpg
+  alt: Six DualSense controllers opened up side by side on a blue work mat.
+  caption: Six DualSense controllers opened up on the bench.
+  date: 2026-07-05
+
+stick-test-black:
+  photo: ./stick-test-black.jpg
+  video: /videos/stick-test-black.mp4
+  alt: A black DualSense with stick drift held in front of a stick test on screen, where the stick dots show its readings.
+  caption: Stick drift on the test screen, before the fix.
+  date: 2026-06-30
+
+red-dualsense:
+  photo: ./red-dualsense.jpg
+  alt: A red and black DualSense controller on a desk mat, its light bar glowing.
+  caption: Red DualSense, back together.
+  date: 2026-06-25
+
+stick-test-red:
+  photo: ./stick-test-red.jpg
+  video: /videos/stick-test-red.mp4
+  alt: A red DualSense with stick drift held in front of a stick test on screen, its left stick reading all the way to one side.
+  caption: A drifting left stick, reading all the way to one side.
+  date: 2026-06-12
+
+black-dualsense:
+  photo: ./black-dualsense.jpg
+  alt: A black DualSense controller on a desk mat, its light bar glowing blue.
+  caption: Black DualSense, back together.
+  date: 2026-06-11
+
+damaged-stick-module:
+  photo: ./damaged-stick-module.jpg
+  alt: Close-up of an opened DualSense stick module with damaged parts inside.
+  caption: A damaged stick module from a drifting controller.
+  date: 2026-05-21
+
+blue-dualsense:
+  photo: ./blue-dualsense.jpg
+  alt: A blue DualSense controller on a desk mat in low light.
+  caption: Blue DualSense, back together.
+  date: 2026-04-15

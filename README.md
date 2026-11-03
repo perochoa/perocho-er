@@ -23,6 +23,10 @@ npm run check    # typecheck (astro check)
 - `src/content/repairs/<yyyy-mm-slug>/index.md`: past repairs, with before/after photos beside
   them. The repo is public, so strip location data from photos before committing.
 
+Search engines and AI assistants read the same details: `src/structured-data.ts` builds the home
+page's JSON-LD and `src/pages/llms.txt.ts` serves `/llms.txt`, both from `src/site.ts` and the
+services. `public/robots.txt` lets every crawler in, AI ones by name.
+
 ## Deploy
 
 Pushing to `main` deploys to GitHub Pages (`.github/workflows/deploy.yml`, built with

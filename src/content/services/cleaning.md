@@ -1,5 +1,6 @@
 ---
 title: PS5 deep cleaning
+photo: ../gallery/fan-intake-dust.jpg
 order: 2
 price: $70, or $100 with an HDMI port replacement
 ---

@@ -1,0 +1,50 @@
+---
+import Contact from "../../components/Contact.astro";
+import Gallery from "../../components/Gallery.astro";
+import RepairCard from "../../components/RepairCard.astro";
+import BaseLayout from "../../layouts/BaseLayout.astro";
+import "../../styles/sections.css";
+import { getRepairs } from "../../repairs";
+import { site } from "../../site";
+
+const repairs = await getRepairs();
+---
+
+<BaseLayout
+	title={`Past repairs · ${site.name}`}
+	description={`Before-and-after photos of PS5 repairs from ${site.name} in ${site.city}: dust cleanouts, liquid metal and HDMI ports.`}
+>
+	<main>
+		<section class="band" aria-labelledby="repairs-title">
+			<div class="wrap">
+				<p class="eyebrow">Past repairs</p>
+				<h1 id="repairs-title">Before and after</h1>
+				<p class="lede">Photos from consoles and controllers that came through the shop, taken while we worked on them.</p>
+				<ul class="cards wide">
+					{repairs.map((repair, i) => <RepairCard repair={repair} i={i} />)}
+				</ul>
+			</div>
+		</section>
+		<Gallery />
+		<Contact />
+	</main>
+</BaseLayout>
+
+<script>
+	import "../../scripts/card-glow";
+</script>
+
+<style>
+	h1 {
+		margin: 0 0 1rem;
+	}
+	/* Two to a row, not three: the photos are what this page is for. */
+	.wide {
+		grid-template-columns: repeat(auto-fit, minmax(min(26rem, 100%), 1fr));
+	}
+	.lede {
+		max-width: 40rem;
+		margin: 0 0 2rem;
+		color: var(--muted);
+	}
+</style>
