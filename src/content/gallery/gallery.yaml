@@ -79,8 +79,8 @@ controllers-opened:
 stick-test-black:
   photo: ./stick-test-black.jpg
   video: /videos/stick-test-black.mp4
-  alt: A black DualSense held in front of a stick test on screen, the dots following each stick and settling back in the centre.
-  caption: Testing a DualSense's sticks before it goes back.
+  alt: A black DualSense with stick drift held in front of a stick test on screen, where the stick dots show its readings.
+  caption: Stick drift on the test screen, before the fix.
   date: 2026-06-30
 
 red-dualsense:
@@ -92,8 +92,8 @@ red-dualsense:
 stick-test-red:
   photo: ./stick-test-red.jpg
   video: /videos/stick-test-red.mp4
-  alt: A red DualSense held in front of a stick test on screen, the dots following each stick to the edge and back.
-  caption: Each stick pushed to the edge and back on the test screen.
+  alt: A red DualSense with stick drift held in front of a stick test on screen, its left stick reading all the way to one side.
+  caption: A drifting left stick, reading all the way to one side.
   date: 2026-06-12
 
 black-dualsense:
