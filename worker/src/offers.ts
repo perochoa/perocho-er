@@ -9,6 +9,7 @@ import { accessToken, bookEvent, createEvent, deleteEvent } from "./google.ts";
 import { describe, dialable, formatTime, type Intake, stop, what } from "./intake.ts";
 import * as notices from "./notices.ts";
 import { escape, html } from "./pages.ts";
+import { parseTechs } from "./techs.ts";
 
 interface RequestRow {
 	id: string;
@@ -300,7 +301,10 @@ type Queued = RequestRow & { approver: string | null; mine: string | null };
 
 export async function queue(env: Env, token: string): Promise<Response> {
 	const offer = await env.DB.prepare("SELECT * FROM offers WHERE token = ?").bind(token).first<OfferRow>();
-	if (!offer) return html("Queue not found", "<h1>Queue not found</h1><p>This link doesn't match a request.</p>", 404);
+	// Links outlive a tech's place in TECHS, and the queue shows every customer, so only a tech still
+	// on the list may open it. A removed tech's old link answers like an unknown one.
+	const current = offer && parseTechs(env.TECHS).some((tech) => tech.calendarId === offer.calendar_id);
+	if (!offer || !current) return html("Queue not found", "<h1>Queue not found</h1><p>This link doesn't match a request.</p>", 404);
 	const { results } = await env.DB.prepare(QUEUE_SQL).bind(offer.calendar_id).all<Queued>();
 
 	const items = results.map((request) => {

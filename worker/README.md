@@ -166,7 +166,8 @@ DEV_ORIGINS=http://localhost:4321
 
 Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
 already sent keep going to the techs they were sent to. A tech added later still sees the
-earlier repairs in the queue, without links, so they can't mark those done.
+earlier repairs in the queue, without links, so they can't mark those done. A tech taken out of
+the list can't open the queue any more, even from old links.
 
 To check a TECHS list before or after setting it, put it in `techs.json` here (gitignored) and
 the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or save the

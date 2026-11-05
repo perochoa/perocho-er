@@ -973,7 +973,7 @@ test("the queue migration clears the test rows and adds the queue's columns", ()
 	assert.deepEqual({ ...sqlite.prepare("SELECT rush, done FROM requests").get() }, { rush: 0, done: null });
 });
 
-const queueOf = (link: string) => worker.fetch(new Request(`${link}/queue`), env);
+const queueOf = (link: string, overrides = {}) => worker.fetch(new Request(`${link}/queue`), { ...env, ...overrides });
 // Files a request for Sam alone at `slot` and has him approve it; returns his link to it.
 const taken = async (fields: Record<string, string>) => {
 	mails = [];
@@ -1196,4 +1196,23 @@ test("the hourly job keeps an old request until its stray holds are deleted", as
 test("answers an unknown queue link with 404", async () => {
 	const response = await queueOf("https://intake.test/offers/00000000-0000-4000-8000-000000000000");
 	assert.equal(response.status, 404);
+});
+
+test("only a tech still in TECHS can open the queue, whatever links they kept", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	await press(sam, "confirm");
+	const TECHS = JSON.stringify([{ name: "Sam", calendarId: "sam@example.com" }]);
+
+	const kept = await queueOf(sam, { TECHS });
+	assert.equal(kept.status, 200);
+	assert.match(await kept.text(), /1 repair /);
+	const removed = await queueOf(richard, { TECHS });
+	assert.equal(removed.status, 404);
+	const body = await removed.text();
+	assert.match(body, /Queue not found/);
+	assert.doesNotMatch(body, /Jane/);
+	// Their link to the one request they were sent still opens.
+	assert.equal((await offerPage(richard)).status, 200);
 });
