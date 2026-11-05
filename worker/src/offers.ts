@@ -113,10 +113,11 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	);
 	for (const result of results) if (result.status === "rejected") console.error(result.reason);
 
+	// Every other tech hears, those who declined the drop-off too: the repair is in their queue now.
 	await send(env, [
 		notices.confirmed(intake, time, offer.name),
 		...offers
-			.filter((other) => other.token !== offer.token && !other.declined)
+			.filter((other) => other.token !== offer.token)
 			.map((other) => notices.taken(intake, time, other.email, offer.name)),
 		notices.taken(intake, time, env.MAIL_TO, offer.name),
 	]);

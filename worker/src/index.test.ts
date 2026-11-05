@@ -649,7 +649,7 @@ test("the first tech to approve the drop-off books it and everyone hears", async
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "richard@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^Your repair is confirmed/);
 	assert.match(text(to("jane@example.com")[0]), /Sam has confirmed your repair/);
-	assert.match(to("richard@example.com")[0].subject, /^Taken by Sam/);
+	assert.match(to("richard@example.com")[0].subject, /^Drop-off approved by Sam/);
 
 	// Too late for Richard: nothing changes, and his page says who approved it.
 	mails = [];
@@ -659,6 +659,23 @@ test("the first tech to approve the drop-off books it and everyone hears", async
 	assert.equal(patched.length, 1);
 	assert.match(await (await offerPage(richard)).text(), /Sam approved the drop-off/);
 	assert.match(await (await offerPage(sam)).text(), /You approved the drop-off/);
+});
+
+test("every other tech hears who approved the drop-off, one who declined it too", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	await press(richard, "decline");
+	mails = [];
+	await press(sam, "confirm");
+
+	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "richard@example.com", "repairs@perocho.com"]);
+	const when = text(to("jane@example.com")[0]).match(/Drop-off time: (.*)/)![1];
+	for (const address of ["richard@example.com", "repairs@perocho.com"]) {
+		const [mail] = to(address);
+		assert.equal(mail.subject, `Drop-off approved by Sam: PS5 deep cleaning from Jane, ${when}`);
+		assert.equal(text(mail), `Sam approved the drop-off, so any hold for it comes off your calendar. The repair is now in the shared queue for any tech to pick up.\n\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
+	}
 });
 
 test("a tech without a hold gets the booking created when they approve it", async () => {
@@ -758,7 +775,7 @@ test("a rush is marked everywhere the techs look, and priced for the customer", 
 	mails = [];
 	await press(sam, "confirm");
 	assert.equal(patched[0].body.summary, "Repair: RUSH PS5 deep cleaning (Jane)");
-	assert.match(to("richard@example.com")[0].subject, /^Taken by Sam: RUSH /);
+	assert.match(to("richard@example.com")[0].subject, /^Drop-off approved by Sam: RUSH /);
 	assert.match(text(to("jane@example.com")[0]), /\+\$20/);
 });
 

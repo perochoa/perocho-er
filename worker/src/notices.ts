@@ -122,11 +122,12 @@ export const declined = (intake: Intake, time: string): Message => turnedAway(in
 
 export const expired = (intake: Intake, time: string): Message => turnedAway(intake, time, "couldn't", "could confirm");
 
-// To the other techs and repairs@, so nobody plans around it any more.
+// To the other techs and repairs@, so nobody plans around the hold any more, and everyone knows the
+// repair is theirs to pick up too.
 export const taken = (intake: Intake, time: string, to: string, tech: string): Message => ({
 	to,
-	subject: `Taken by ${tech}: ${about(intake, time)}`,
-	text: `${tech} took this request, so any hold for it comes off your calendar.\n\n${describe(intake, time)}`,
+	subject: `Drop-off approved by ${tech}: ${about(intake, time)}`,
+	text: `${tech} approved the drop-off, so any hold for it comes off your calendar. The repair is now in the shared queue for any tech to pick up.\n\n${describe(intake, time)}`,
 });
 
 const closed = (intake: Intake, time: string, to: string, subject: string, lead: string): Message => ({
