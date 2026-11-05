@@ -3,12 +3,13 @@
 A Cloudflare Worker behind the site's repair request form (`/request/`). It reads each tech's
 Google Calendar to offer open drop-off times, and offers each request to every tech by email,
 with a tentative hold on the calendar of every tech free at the picked time. The first tech to
-take it gets it, and the customer is emailed at each step. Repairs are drop-off only: the picked
-time is when the customer brings the device in, and any number of customers can pick the same
-time. When it'll be ready is up to the tech and the customer, by phone or email. A time and a
-phone number are required; without JS, or when there are no open times, the form points people
-to Messenger and email instead. A customer can ask for a rush (+$20, paid in person like the
-rest), which puts their repair at the front of the queue.
+approve the drop-off gets the device at that time, the repair goes in one queue all the techs
+share, and the customer is emailed at each step. Repairs are drop-off only: the picked time is
+when the customer brings the device in, and any number of customers can pick the same time.
+When it'll be ready is up to the tech who does the repair and the customer, by phone or email.
+A time and a phone number are required; without JS, or when there are no open times, the form
+points people to Messenger and email instead. A customer can ask for a rush (+$20, paid in
+person like the rest), which puts their repair at the front of the queue.
 
 Messenger, email and Facebook Marketplace stay as they are. The form is one more way in.
 
@@ -24,37 +25,46 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   away from anyone else: their events on your calendar are set to "Free".
 - **Your other events still block times inside a block.** All-day events, events set to "Free"
   and invites you declined don't.
-- **To take on less, offer fewer drop-off times:** trim your "Available" blocks. Every repair
-  you take joins your queue, so check it before adding more.
+- **To take in fewer devices, offer fewer drop-off times:** trim your "Available" blocks. To do
+  fewer repairs, pick fewer from the queue; the others can pick up the rest.
 - **Every request is emailed to every tech**, each with their own link, and a copy without
   links goes to `repairs@perocho.com`. If you're free at the picked time it's also on your
   calendar as a yellow, tentative `Request: ...` event, with the details and your link in its
   description. Every request has the customer's phone number, so you can call them to talk
   through the price (the offer page has a tap-to-call link); replying to the email reaches them
   too.
-- **Open your link to take it or decline it.** Opening it changes nothing; the buttons do.
-  - **Take it:** the first tech to press it gets the request. Your hold turns into a green
-    `Repair: ...` booking (or one is created if you didn't have a hold), everyone else's hold
-    is deleted, and the customer and the other techs are emailed. Anyone who presses it after
-    you sees that you took it. You can take a request when you're busy (and move what was
-    there), and as many as you like at the same drop-off time. Then agree with the customer
-    when it'll be ready.
-  - **Decline:** takes only you out; your hold is deleted and the others can still take it. You
-    can change your mind and take it while it's open. Once every tech has declined, the customer
-    is told nobody can take it.
-  - **Nobody takes it in time:** once the picked time starts it can't be taken, and within the
-    hour it expires: any holds are deleted and the customer is told nobody could take it.
-- **To cancel or move a booking**, change or delete the event and email the customer yourself.
-- **Your queue** is the "Your queue" link at the bottom of any of your request pages: every
-  repair you've taken and not marked done, rush first, then by drop-off time, each with the
-  customer's number and a link to its page. Press **Mark done** on a repair's page once it's
-  back with the customer and it leaves the queue (nothing is emailed, and the calendar event
-  stays). Only the tech who took it can.
+- **Open your link to approve the drop-off or decline it.** Opening it changes nothing; the
+  buttons do. Approving is for the drop-off time only: it says the device can come to you then,
+  not that you'll do the repair.
+  - **Approve drop-off:** the first tech to press it gets the drop-off. Your hold turns into a
+    green `Repair: ...` booking (or one is created if you didn't have a hold), everyone else's
+    hold is deleted, and the customer and the other techs are emailed. The repair then goes in
+    the repair queue, for any tech to pick up. Anyone who presses it after you sees that you
+    approved it. You can approve a drop-off when you're busy (and move what was there), and as
+    many as you like at the same time.
+  - **Decline:** takes only you out of the drop-off; your hold is deleted and the others can
+    still approve it. You can change your mind and approve it while it's open. Once every tech
+    has declined, the customer is told nobody can take it. Declining the drop-off isn't
+    declining the repair: once someone approves it, you can still pick it up from the queue.
+  - **Nobody approves it in time:** once the picked time starts it can't be approved, and within
+    the hour it expires: any holds are deleted and the customer is told nobody could take it.
+- **To cancel or move a drop-off**, the tech who approved it changes or deletes the booking and
+  emails the customer.
+- **The repair queue is shared.** The "Repair queue" link at the bottom of any of your request
+  pages shows every approved repair not marked done yet, rush first, then by drop-off time, each
+  with who approved it (the device comes to them), the customer's number and a link to its
+  page. Every tech sees the same queue, and it's up to you which ones you can and want to do. Whoever does one agrees with the customer when it'll be ready. Nothing in the
+  queue says who's working on what, so tell the others when you pick one up. A repair that came
+  in before you were added to `TECHS` is listed without a link, since it wasn't sent to you.
+- **Mark done** on a repair's page once it's back with the customer. Any tech can, whoever
+  approved the drop-off, and one who declined it too. It leaves the queue for everyone, and its
+  page shows who approved it and who finished it. Only the first press counts, and it can't be
+  undone. Nothing is emailed, and the calendar event stays.
 - **A rush** says `RUSH` in the email subjects, the calendar event's title and on the offer
   page. The customer was told it's +$20, paid in person with the repair; nothing is charged
   online.
-- **The customer gets an email** when the request comes in, when a tech takes it, when every
-  tech declines or it expires, and if it failed to go through.
+- **The customer gets an email** when the request comes in, when a tech approves the drop-off,
+  when every tech declines or it expires, and if it failed to go through.
 - If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
   the calendar too: the hold has everything the email would have, including your link.
 - Times are offered from 2 hours ahead, on the quarter hour inside each block. The form's row
@@ -155,7 +165,8 @@ DEV_ORIGINS=http://localhost:4321
 `migrations/`; never edit one that's been applied.
 
 Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
-already sent keep going to the techs they were sent to.
+already sent keep going to the techs they were sent to. A tech added later still sees the
+earlier repairs in the queue, without links, so they can't mark those done.
 
 To check a TECHS list before or after setting it, put it in `techs.json` here (gitignored) and
 the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or save the
@@ -173,7 +184,7 @@ It changes nothing on the calendars, and exits 1 if any check failed.
 Requests, with the customer's name, email, phone and what they wrote, are kept in D1 while
 they're in use. The hourly job deletes a request and its offers `RETENTION_DAYS` (180) days
 after its drop-off time once it's settled: declined by every tech, expired, or marked done. A
-repair that's taken but not marked done stays until it is, so it never drops out of a queue.
+repair that's approved but not marked done stays until it is, so it never drops out of the queue.
 One with a calendar hold the job hasn't managed to delete yet stays until the hold is gone.
 The emails and calendar events about it aren't touched. Change it in `wrangler.jsonc`, then
 `npm run types` and deploy.
