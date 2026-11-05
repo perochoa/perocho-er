@@ -648,7 +648,7 @@ test("the first tech to approve the drop-off books it and everyone hears", async
 
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "richard@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^Your repair is confirmed/);
-	assert.match(text(to("jane@example.com")[0]), /Sam has confirmed your repair/);
+	assert.match(text(to("jane@example.com")[0]), /Sam has confirmed your repair\. Drop off your device on .* We'll let you know when it's ready to pick up\./);
 	assert.match(to("richard@example.com")[0].subject, /^Drop-off approved by Sam/);
 
 	// Too late for Richard: nothing changes, and his page says who approved it.

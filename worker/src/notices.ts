@@ -93,13 +93,14 @@ export const failed = (intake: Intake): Message => ({
 	].join("\n"),
 });
 
+// Any tech may do the repair, not only the one who approved the drop-off, so "we" say when it's ready.
 export const confirmed = (intake: Intake, time: string, tech: string): Message => ({
 	to: intake.email,
 	subject: `Your repair is confirmed: ${what(intake)}, ${time}`,
 	text: [
 		hi(intake),
 		"",
-		`${tech} has confirmed your repair. Drop off your device on ${stop(time)} ${tech} will let you know when it's ready to pick up.`,
+		`${tech} has confirmed your repair. Drop off your device on ${stop(time)} We'll let you know when it's ready to pick up.`,
 		...rush(intake),
 		"Reply to this email if you need the address or to change anything.",
 		...yours(intake, time),
