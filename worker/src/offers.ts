@@ -1,6 +1,7 @@
 // A request offered to each tech. Their link opens a page that shows the request and lets them
-// take or decline it, and mark it done once it's taken. The page only shows it; the buttons
-// POST, because mail scanners open the links in emails and must not take requests by doing so.
+// approve its drop-off time or decline it, and mark the repair done once it's approved. The page
+// only shows it; the buttons POST, because mail scanners open the links in emails and must not
+// approve requests by doing so.
 // Each link also opens the repair queue the techs share: every approved repair not marked done.
 
 import { type Mail, sendMail } from "./fastmail.ts";
@@ -58,12 +59,13 @@ const send = async (env: Env, mails: Omit<Mail, "from">[]) => {
 	}
 };
 
-// Once the time has started nobody can take it; the scheduled job expires it.
+// Once the time has started nobody can approve it; the scheduled job expires it.
 const passed = (request: RequestRow, now = Date.now()) => request.slot_start <= now;
 
-// First tech to get here takes it: one statement, so two techs pressing at once can't both win. A
-// tech who declined can still change their mind while it's open. Other repairs at the same time
-// don't stop them: it's a drop-off time, and any number of devices can come in then.
+// First tech to get here approves the drop-off, and the device comes to them then: one statement,
+// so two techs pressing at once can't both win. Only the drop-off; the repair goes in the queue
+// for any tech. A tech who declined can still change their mind while it's open. Other repairs at
+// the same time don't stop them: it's a drop-off time, and any number of devices can come in then.
 async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	const won = await env.DB.prepare(
 		`UPDATE requests SET status = 'confirmed', confirmed_by = ?2
@@ -123,8 +125,8 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 // Takes only this tech out. Once nobody's left, the customer hears it's a no.
 async function decline(env: Env, { offer, request, intake }: Loaded) {
 	if (request.status !== "pending") return;
-	// Checked again here, not only on what was loaded: had they just taken it in another tab, their
-	// hold is now the booking and mustn't be deleted.
+	// Checked again here, not only on what was loaded: had they just approved it in another tab,
+	// their hold is now the booking and mustn't be deleted.
 	const changed = await env.DB.prepare(
 		`UPDATE offers SET declined = 1 WHERE token = ?1 AND declined = 0
 		 AND (SELECT status FROM requests WHERE id = ?2) = 'pending'`,
@@ -164,7 +166,7 @@ async function finish(env: Env, { offer, request }: Loaded) {
 		.run();
 }
 
-// Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
+// Run by the cron in wrangler.jsonc. Closes the requests nobody approved in time and tells the
 // customer, then deletes the holds nobody needs any more: a declined tech's, and every hold but
 // the booking once a request is settled. Holds whose delete failed earlier are among them. Last,
 // it deletes the customer's details once a request is settled and RETENTION_DAYS past its time.
@@ -206,7 +208,7 @@ export async function expire(env: Env, now = Date.now()): Promise<void> {
 		}
 	}
 
-	// Settled: nobody took it, or it's back with the customer. A repair still in the queue stays
+	// Settled: nobody approved it, or it's back with the customer. A repair still in the queue stays
 	// however old it is, and so does one with a hold still to delete, since its offer is the
 	// only record of the hold. Offers first, since they point at the request.
 	const settled = `SELECT id FROM requests WHERE slot_start < ?1
@@ -233,7 +235,7 @@ function view({ offer, request, offers, intake }: Loaded, time: string): [string
 	// The tech behind an offer token, as "You" on their own page.
 	const who = (token: string | null) =>
 		token === offer.token ? "You" : (offers.find((other) => other.token === token)?.name ?? "Another tech");
-	const take = '<button name="action" value="confirm">Take it</button>';
+	const approve = '<button name="action" value="confirm">Approve drop-off</button>';
 	if (request.status === "confirmed") {
 		const approved = `${who(request.confirmed_by)} approved the drop-off`;
 		if (request.done !== null) {
@@ -243,18 +245,18 @@ function view({ offer, request, offers, intake }: Loaded, time: string): [string
 		}
 		return [
 			approved,
-			"The customer has been told. Any tech can do the repair: whoever does agrees with them when it'll be ready, and marks it done once it's back with them.",
+			"The customer has been told, and it's in the repair queue for any tech to pick up. Whoever does the repair agrees with them when it'll be ready, and marks it done once it's back with them.",
 			'<button name="action" value="done">Mark done</button>',
 		];
 	}
 	if (request.status === "declined") return ["Every tech declined this request", "The customer has been told.", ""];
-	if (request.status === "expired") return ["This request expired", "Nobody took it in time, and the customer has been told.", ""];
-	if (passed(request)) return ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""];
-	if (offer.declined) return ["You declined this request", "It's still open for the others, so you can take it after all.", take];
+	if (request.status === "expired") return ["This request expired", "Nobody approved the drop-off in time, and the customer has been told.", ""];
+	if (passed(request)) return ["This time has passed", "Nobody approved the drop-off in time, so it can't be approved now.", ""];
+	if (offer.declined) return ["You declined this request", "It's still open for the others, so you can approve the drop-off after all.", approve];
 	return [
 		intake.rush ? "New rush repair request" : "New repair request",
-		`Drop-off ${stop(time)} The first tech to take it gets it.`,
-		take + '<button name="action" value="decline">Decline</button>',
+		`Drop-off ${stop(time)} The first tech to approve gets the drop-off, and the repair goes in the queue for any tech to pick up.`,
+		approve + '<button name="action" value="decline">Decline</button>',
 	];
 }
 

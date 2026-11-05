@@ -327,7 +327,7 @@ test("holds the picked time on the free tech's calendar and offers it to every t
 	assert.equal(holds[0].body.transparency, "transparent");
 	assert.equal(holds[0].body.end.dateTime, iso(slotStart + quarter));
 	assert.equal(holds[0].body.summary, "Request: PS5 deep cleaning (Jane)");
-	assert.ok(holds[0].body.description.includes(linkFor("sam@example.com")));
+	assert.ok(holds[0].body.description.endsWith(`\n\nApprove the drop-off or decline it: ${linkFor("sam@example.com")}`));
 
 	// Richard is busy then but still hears of it, with his own link.
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["richard@example.com", "sam@example.com", "repairs@perocho.com", "jane@example.com"]);
@@ -335,6 +335,8 @@ test("holds the picked time on the free tech's calendar and offers it to every t
 	assert.deepEqual(to("sam@example.com")[0].replyTo, [{ email: "jane@example.com" }]);
 	assert.match(text(to("sam@example.com")[0]), /tentative hold/);
 	assert.doesNotMatch(text(to("richard@example.com")[0]), /tentative hold/);
+	assert.match(text(to("richard@example.com")[0]), new RegExp(`\nApprove the drop-off or decline it: ${linkFor("richard@example.com")}\n`));
+	assert.match(text(to("richard@example.com")[0]), /\nThe first tech to approve gets the drop-off, and the repair goes in the queue all the techs share/);
 	assert.doesNotMatch(text(to("repairs@perocho.com")[0]), /offers/);
 	assert.match(text(to("repairs@perocho.com")[0]), /Sent to: Richard, Sam\nHeld on: Sam \(tentative\)/);
 	assert.match(to("jane@example.com")[0].subject, /^We got your repair request/);
@@ -577,7 +579,7 @@ test("shows a tech the request without changing anything", async () => {
 	assert.match(body, /Loud fan/);
 	assert.match(body, /<a href="tel:4165550123">Call Jane: \(416\) 555-0123<\/a>/);
 	assert.match(body, /<form method="post">/);
-	assert.match(body, /value="confirm"/);
+	assert.match(body, /value="confirm">Approve drop-off</);
 	assert.match(body, /value="decline"/);
 	assert.equal(status(), "pending");
 	assert.equal(patched.length + deleted.length, 0);
@@ -603,10 +605,10 @@ test("escapes what the customer wrote on the page", async () => {
 });
 
 test("keeps tags out of what the customer wrote on the calendar", async () => {
-	await submit({ slot: iso(slotStart), problem: '<a href="https://evil.example">Take it</a>' });
+	await submit({ slot: iso(slotStart), problem: '<a href="https://evil.example">Approve the drop-off</a>' });
 	const { description } = holds[0].body;
 	assert.ok(!description.includes("<a"));
-	assert.match(description, /‹a href="https:\/\/evil\.example"›Take it‹\/a›/);
+	assert.match(description, /‹a href="https:\/\/evil\.example"›Approve the drop-off‹\/a›/);
 });
 
 test("answers an unknown link with 404", async () => {
@@ -624,7 +626,7 @@ test("a post to a link that isn't a form changes nothing", async () => {
 	assert.equal(status(), "pending");
 });
 
-test("the first tech to take it books it and everyone hears", async () => {
+test("the first tech to approve the drop-off books it and everyone hears", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
 	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
@@ -641,6 +643,7 @@ test("the first tech to take it books it and everyone hears", async () => {
 	assert.equal(patched[0].body.status, "confirmed");
 	assert.equal(patched[0].body.transparency, "transparent");
 	assert.equal(patched[0].body.summary, "Repair: PS5 deep cleaning (Jane)");
+	assert.match(patched[0].body.description, /\n\nDrop-off approved by Sam\. The repair is in the queue for any tech to pick up;/);
 	assert.deepEqual(deleted, [{ calendarId: "richard@example.com", eventId: "hold1" }]);
 
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "richard@example.com", "repairs@perocho.com"]);
@@ -648,7 +651,7 @@ test("the first tech to take it books it and everyone hears", async () => {
 	assert.match(text(to("jane@example.com")[0]), /Sam has confirmed your repair/);
 	assert.match(to("richard@example.com")[0].subject, /^Taken by Sam/);
 
-	// Too late for Richard: nothing changes, and his page says who took it.
+	// Too late for Richard: nothing changes, and his page says who approved it.
 	mails = [];
 	await press(richard, "confirm");
 	await press(richard, "decline");
@@ -658,7 +661,7 @@ test("the first tech to take it books it and everyone hears", async () => {
 	assert.match(await (await offerPage(sam)).text(), /You approved the drop-off/);
 });
 
-test("a tech without a hold gets the booking created when they take it", async () => {
+test("a tech without a hold gets the booking created when they approve it", async () => {
 	await submit({ slot: iso(slotStart) }); // Richard was busy, so only Sam holds it
 	await press(linkFor("richard@example.com"), "confirm");
 	const booking = holds.find((hold) => hold.calendarId === "richard@example.com");
@@ -690,7 +693,7 @@ test("declining only takes that tech out, until nobody's left", async () => {
 	assert.equal(text(to("repairs@perocho.com")[0]), `Every tech declined this request, and the customer has been told.\n\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
 });
 
-test("a tech who declined can still take it while it's open", async () => {
+test("a tech who declined can still approve it while it's open", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
 	const richard = linkFor("richard@example.com");
@@ -702,7 +705,7 @@ test("a tech who declined can still take it while it's open", async () => {
 	assert.equal(holds.at(-1)!.body.status, "confirmed");
 });
 
-test("nobody can take it once the time has started", async () => {
+test("nobody can approve it once the time has started", async () => {
 	await submit({ slot: iso(slotStart) });
 	db.sqlite.prepare("UPDATE requests SET slot_start = ?, slot_end = ?").run(Date.now() - hour, Date.now());
 	const sam = linkFor("sam@example.com");
@@ -715,7 +718,7 @@ test("nobody can take it once the time has started", async () => {
 	assert.ok(!body.includes("<form"));
 });
 
-test("a tech can take two repairs dropped off at the same time", async () => {
+test("a tech can approve two repairs dropped off at the same time", async () => {
 	await submit({ slot: iso(slotStart) });
 	await submit({ slot: iso(slotStart), name: "Bob", email: "bob@example.com" });
 	const [jane, bob] = to("sam@example.com").map((mail) => text(mail).match(/https:\/\/intake\.test\/offers\/[0-9a-f-]+/)![0]);
@@ -725,7 +728,7 @@ test("a tech can take two repairs dropped off at the same time", async () => {
 	assert.deepEqual(rows.map((row: any) => row.status), ["confirmed", "confirmed"]);
 });
 
-test("two techs pressing take at once: exactly one gets it", async () => {
+test("two techs pressing approve at once: exactly one gets it", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
 	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
@@ -804,7 +807,7 @@ test("nothing is confirmed until the booking is on the calendar", async () => {
 const tick = () => worker.scheduled({} as ScheduledController, env as unknown as Env);
 const holdIds = () => db.sqlite.prepare("SELECT hold_id FROM offers ORDER BY position").all().map((row: any) => row.hold_id);
 
-test("expires a request nobody took once its time starts, and lets the holds go", async () => {
+test("expires a request nobody approved once its time starts, and lets the holds go", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
 	const sam = linkFor("sam@example.com");
@@ -817,10 +820,10 @@ test("expires a request nobody took once its time starts, and lets the holds go"
 	assert.equal(status(), "expired");
 	assert.deepEqual(mails.map((mail) => mail.to[0].email), ["jane@example.com", "repairs@perocho.com"]);
 	assert.match(to("jane@example.com")[0].subject, /^We couldn't take your repair request/);
-	assert.match(to("repairs@perocho.com")[0].subject, /^Nobody took/);
+	assert.match(to("repairs@perocho.com")[0].subject, /^Nobody approved/);
 	const when = text(to("jane@example.com")[0]).match(/Drop-off time: (.*)/)![1];
 	assert.equal(text(to("jane@example.com")[0]), `Hi Jane,\n\nSorry, none of our techs could confirm ${when} Reply to this email and we'll try to find another time, or send the form again with a different one.\n\nYour request:\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
-	assert.equal(text(to("repairs@perocho.com")[0]), `Nobody took this request in time, so it's closed and the customer has been told.\n\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
+	assert.equal(text(to("repairs@perocho.com")[0]), `Nobody approved the drop-off in time, so it's closed and the customer has been told.\n\nName: Jane\nEmail: jane@example.com\nPhone: (416) 555-0123\nService: PS5 deep cleaning\nDevice: PS5 disc\nDrop-off time: ${when}\n\nWhat's wrong:\nLoud fan`);
 	assert.deepEqual(deleted.map((d) => d.calendarId).sort(), ["richard@example.com", "sam@example.com"]);
 	assert.deepEqual(holdIds(), [null, null]);
 	assert.match(await (await offerPage(sam)).text(), /This request expired/);
@@ -854,7 +857,7 @@ test("the hourly job deletes a declined tech's hold that couldn't be deleted at 
 	assert.ok(!calendars["richard@example.com"].some((e: any) => e.id === "hold1"));
 });
 
-test("the hourly job deletes another tech's hold that couldn't be deleted when one took it", async () => {
+test("the hourly job deletes another tech's hold that couldn't be deleted when one approved it", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
 	await withFailing("DELETE", () => press(linkFor("sam@example.com"), "confirm"));
@@ -876,7 +879,7 @@ test("the hourly job leaves the booking alone", async () => {
 	assert.equal(calendars["sam@example.com"].filter((e: any) => e.status === "confirmed").length, 1);
 });
 
-test("taking it in one tab and declining in another keeps the booking", async () => {
+test("approving it in one tab and declining in another keeps the booking", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
 	const sam = linkFor("sam@example.com");
@@ -954,7 +957,7 @@ test("the queue migration clears the test rows and adds the queue's columns", ()
 });
 
 const queueOf = (link: string) => worker.fetch(new Request(`${link}/queue`), env);
-// Files a request for Sam alone at `slot` and has him take it; returns his link to it.
+// Files a request for Sam alone at `slot` and has him approve it; returns his link to it.
 const taken = async (fields: Record<string, string>) => {
 	mails = [];
 	await submit(fields);
@@ -1101,7 +1104,7 @@ const age = (days: number) =>
 
 test("the hourly job deletes settled requests and their offers once they're old enough", async () => {
 	both();
-	await submit({ slot: iso(slotStart) }); // nobody takes it, so it expires
+	await submit({ slot: iso(slotStart) }); // nobody approves it, so it expires
 	await press(await taken({ slot: iso(slotStart + quarter) }), "done");
 	mails = [];
 	await submit({ slot: iso(slotStart + 2 * quarter) });

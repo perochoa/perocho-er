@@ -24,23 +24,24 @@ export const toTech = (intake: Intake, time: string, tech: Offered): Message => 
 	text: [
 		describe(intake, time),
 		"",
-		`Take it or decline it: ${tech.link}`,
-		"The first tech to take it gets it. Declining only takes you out; the others can still take it.",
-		...(intake.rush ? ["It's a rush: if you take it, it goes to the front of your queue."] : []),
-		...(tech.held ? ["It's on your calendar as a tentative hold until someone takes it."] : []),
+		`Approve the drop-off or decline it: ${tech.link}`,
+		"The first tech to approve gets the drop-off, and the repair goes in the queue all the techs share, for any of you to pick up. Declining only takes you out of the drop-off; the others can still approve it.",
+		...(intake.rush ? ["It's a rush: once approved, it goes to the front of the queue."] : []),
+		...(tech.held ? ["It's on your calendar as a tentative hold until someone approves it."] : []),
 		"The time is when they drop it off. Call them to talk through the price and when it'll be ready, or reply to this email to reach them.",
 	].join("\n"),
 });
 
 // Google shows an event's description as HTML, so a customer could hide a link of their own
-// behind text like "Take it". Lookalike brackets keep what they wrote readable without any tags.
+// behind text like "Approve the drop-off". Lookalike brackets keep what they wrote readable without
+// any tags.
 const untagged = (text: string) => text.replaceAll("<", "‹").replaceAll(">", "›");
 
 export const holdDescription = (intake: Intake, time: string, link: string) =>
-	`${untagged(describe(intake, time))}\n\nTake it or decline it: ${link}`;
+	`${untagged(describe(intake, time))}\n\nApprove the drop-off or decline it: ${link}`;
 
 export const bookedDescription = (intake: Intake, time: string, tech: string) =>
-	`${untagged(describe(intake, time))}\n\nTaken by ${tech}. This is the drop-off; agree when it'll be ready with them. Delete this event to cancel, and let them know.`;
+	`${untagged(describe(intake, time))}\n\nDrop-off approved by ${tech}. The repair is in the queue for any tech to pick up; whoever does agrees with them when it'll be ready. Delete this event to cancel, and let them know.`;
 
 export const holdSummary = (intake: Intake) => `Request: ${rushed(intake)} (${intake.name})`;
 export const bookedSummary = (intake: Intake) => `Repair: ${rushed(intake)} (${intake.name})`;
@@ -138,4 +139,4 @@ export const nobody = (intake: Intake, time: string, to: string): Message =>
 	closed(intake, time, to, "Every tech declined", "Every tech declined this request,");
 
 export const unclaimed = (intake: Intake, time: string, to: string): Message =>
-	closed(intake, time, to, "Nobody took", "Nobody took this request in time, so it's closed");
+	closed(intake, time, to, "Nobody approved", "Nobody approved the drop-off in time, so it's closed");

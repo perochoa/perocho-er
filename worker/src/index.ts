@@ -5,12 +5,13 @@
 //   POST /request        the form; holds the picked time on every free tech's calendar, offers it to
 //                        every tech by email and tells the customer, then redirects back to the
 //                        site (the form works without JS)
-//   GET  /offers/<token> one tech's link to a request: shows it, with buttons to take or decline it
+//   GET  /offers/<token> one tech's link to a request: shows it, with buttons to approve the drop-off
+//                        or decline it, and to mark the repair done once it's approved
 //   POST /offers/<token> those buttons
 //   GET  /offers/<token>/queue  the repair queue every tech shares: each approved repair not marked
 //                        done, linked to that tech's own offers
-// and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time, deletes stray
-// holds, and deletes settled requests past RETENTION_DAYS.
+// and hourly (the cron in wrangler.jsonc) expires the requests nobody approved in time, deletes
+// stray holds, and deletes settled requests past RETENTION_DAYS.
 
 import { sendMail } from "./fastmail.ts";
 import { accessToken, createEvent, deleteEvent, listEvents } from "./google.ts";
@@ -145,7 +146,7 @@ async function file(env: Env, intake: Intake, origin: string): Promise<Outcome> 
 	const slot = (await findSlots(env, token, techs, intake.slot, end)).slots.find((s) => s.start === intake.slot);
 	if (!slot) return "closed";
 
-	// Every tech free then gets a hold, so they can all plan around it until one takes it.
+	// Every tech free then gets a hold, so they can all plan around it until one approves it.
 	const held = await Promise.allSettled(
 		slot.techs.map((i) => hold(env, token, offers[i], slot, intake, link(offers[i]))),
 	);
