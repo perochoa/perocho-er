@@ -654,8 +654,8 @@ test("the first tech to take it books it and everyone hears", async () => {
 	await press(richard, "decline");
 	assert.equal(mails.length, 0);
 	assert.equal(patched.length, 1);
-	assert.match(await (await offerPage(richard)).text(), /Sam took this request/);
-	assert.match(await (await offerPage(sam)).text(), /You took this request/);
+	assert.match(await (await offerPage(richard)).text(), /Sam approved the drop-off/);
+	assert.match(await (await offerPage(sam)).text(), /You approved the drop-off/);
 });
 
 test("a tech without a hold gets the booking created when they take it", async () => {
@@ -996,29 +996,56 @@ test("escapes what the customer wrote in the queue", async () => {
 	assert.match(body, /&lt;b&gt;Jane/);
 });
 
-test("only the tech who took it can mark it done, and then it leaves the queue", async () => {
+const tokenOf = (link: string) => link.split("/").pop()!;
+const finished = () => ({ ...(db.sqlite.prepare("SELECT done, done_by FROM requests").get() as any) });
+
+test("any tech can mark it done, one who declined the drop-off too, and then it leaves the queue", async () => {
 	both();
 	await submit({ slot: iso(slotStart) });
 	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
 	await press(richard, "done"); // still open: nothing to finish
-	assert.equal((db.sqlite.prepare("SELECT done FROM requests").get() as any).done, null);
+	assert.deepEqual(finished(), { done: null, done_by: null });
+	await press(richard, "decline");
 	await press(sam, "confirm");
-	assert.match(await (await offerPage(sam)).text(), /value="done">Mark done/);
-	assert.doesNotMatch(await (await offerPage(richard)).text(), /value="done"/);
+	for (const link of [richard, sam]) assert.match(await (await offerPage(link)).text(), /value="done">Mark done/);
 
-	await press(richard, "done");
-	assert.equal((db.sqlite.prepare("SELECT done FROM requests").get() as any).done, null);
 	mails = [];
-	await press(sam, "done");
-	assert.ok((db.sqlite.prepare("SELECT done FROM requests").get() as any).done > 0);
+	await press(richard, "done");
+	assert.ok(finished().done > 0);
+	assert.equal(finished().done_by, tokenOf(richard));
 	assert.equal(status(), "confirmed");
 	assert.equal(mails.length, 0);
 
-	const page = await (await offerPage(sam)).text();
-	assert.match(page, /You finished this repair/);
-	assert.ok(!page.includes("<form"));
+	// Both pages say who approved it and who finished it, with nothing left to press.
+	const [his, mine] = [await (await offerPage(sam)).text(), await (await offerPage(richard)).text()];
+	assert.match(his, /Richard finished this repair/);
+	assert.match(his, /You approved the drop-off, and it&#39;s out of the queue/);
+	assert.match(mine, /You finished this repair/);
+	assert.match(mine, /Sam approved the drop-off, and it&#39;s out of the queue/);
+	for (const page of [his, mine]) assert.ok(!page.includes("<form"));
 	assert.match(await (await queueOf(sam)).text(), /Nothing in your queue/);
-	assert.match(await (await offerPage(richard)).text(), /Sam took this request/);
+});
+
+test("a repair is marked done only once, by the first tech to press it", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	await press(sam, "confirm");
+	await press(sam, "done");
+	const first = finished();
+	await press(richard, "done");
+	await press(sam, "done");
+	assert.deepEqual(finished(), first);
+	assert.equal(first.done_by, tokenOf(sam));
+});
+
+test("a repair marked done before done_by was kept shows its approver as finishing it", async () => {
+	both();
+	await submit({ slot: iso(slotStart) });
+	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	await press(sam, "confirm");
+	db.sqlite.prepare("UPDATE requests SET done = ?").run(Date.now());
+	assert.match(await (await offerPage(richard)).text(), /Sam finished this repair/);
 });
 
 test("the hourly job leaves a finished repair and its booking alone", async () => {

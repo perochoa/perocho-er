@@ -1,5 +1,5 @@
 // A request offered to each tech. Their link opens a page that shows the request and lets them
-// take or decline it, and mark it done once they've taken it. The page only shows it; the buttons
+// take or decline it, and mark it done once it's taken. The page only shows it; the buttons
 // POST, because mail scanners open the links in emails and must not take requests by doing so.
 // Each link also opens that tech's queue: the repairs they took and haven't marked done.
 
@@ -16,9 +16,10 @@ interface RequestRow {
 	slot_start: number;
 	slot_end: number;
 	status: "pending" | "confirmed" | "declined" | "expired";
-	confirmed_by: string | null;
+	confirmed_by: string | null; // the offer token of the tech who approved the drop-off
 	rush: number; // the fee, 0 for none
-	done: number | null; // when the tech who took it marked it done
+	done: number | null; // when a tech marked it done
+	done_by: string | null; // the offer token of that tech; null for ones done before 0005
 }
 
 interface OfferRow {
@@ -152,10 +153,12 @@ async function decline(env: Env, { offer, request, intake }: Loaded) {
 	await send(env, [notices.declined(intake, time), notices.nobody(intake, time, env.MAIL_TO)]);
 }
 
-// Out of the taker's queue once it's back with the customer. Only they can, and only once.
+// Out of the queue once it's back with the customer. Approving only settled the drop-off, so any
+// tech with a link to it may have done the repair, one who declined the drop-off too. Only once,
+// so it keeps the first tech who said so.
 async function finish(env: Env, { offer, request }: Loaded) {
 	await env.DB.prepare(
-		"UPDATE requests SET done = ?3 WHERE id = ?1 AND status = 'confirmed' AND confirmed_by = ?2 AND done IS NULL",
+		"UPDATE requests SET done = ?3, done_by = ?2 WHERE id = ?1 AND status = 'confirmed' AND done IS NULL",
 	)
 		.bind(request.id, offer.token, Date.now())
 		.run();
@@ -226,18 +229,23 @@ export async function act(env: Env, token: string, action: string): Promise<void
 }
 
 // What a tech's link says, and the buttons it offers, for where the request stands.
-function view(offer: OfferRow, request: RequestRow, taker: OfferRow | undefined, intake: Intake, time: string): [string, string, string] {
+function view({ offer, request, offers, intake }: Loaded, time: string): [string, string, string] {
+	// The tech behind an offer token, as "You" on their own page.
+	const who = (token: string | null) =>
+		token === offer.token ? "You" : (offers.find((other) => other.token === token)?.name ?? "Another tech");
 	const take = '<button name="action" value="confirm">Take it</button>';
 	if (request.status === "confirmed") {
-		if (taker?.token === offer.token) {
-			if (request.done !== null) return ["You finished this repair", "It's out of your queue.", ""];
-			return [
-				"You took this request",
-				"It's yours, and the customer has been told. Agree with them when it'll be ready, and mark it done once it's back with them.",
-				'<button name="action" value="done">Mark done</button>',
-			];
+		const approved = `${who(request.confirmed_by)} approved the drop-off`;
+		if (request.done !== null) {
+			// Before done_by, only the approver could mark it done.
+			const finisher = who(request.done_by ?? request.confirmed_by);
+			return [`${finisher} finished this repair`, `${approved}, and it's out of the queue.`, ""];
 		}
-		return [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""];
+		return [
+			approved,
+			"The customer has been told. Any tech can do the repair: whoever does agrees with them when it'll be ready, and marks it done once it's back with them.",
+			'<button name="action" value="done">Mark done</button>',
+		];
 	}
 	if (request.status === "declined") return ["Every tech declined this request", "The customer has been told.", ""];
 	if (request.status === "expired") return ["This request expired", "Nobody took it in time, and the customer has been told.", ""];
@@ -253,11 +261,10 @@ function view(offer: OfferRow, request: RequestRow, taker: OfferRow | undefined,
 export async function page(env: Env, token: string): Promise<Response> {
 	const loaded = await load(env.DB, token);
 	if (!loaded) return html("Request not found", "<h1>Request not found</h1><p>This link doesn't match a request.</p>", 404);
-	const { offer, request, offers, intake } = loaded;
+	const { offer, request, intake } = loaded;
 	const time = timeOf(env, request);
-	const taker = offers.find((other) => other.token === request.confirmed_by);
 
-	const [title, state, buttons] = view(offer, request, taker, intake, time);
+	const [title, state, buttons] = view(loaded, time);
 
 	// Payment is in person, so the fee is only a reminder.
 	const rush = intake.rush
