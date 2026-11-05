@@ -1,4 +1,4 @@
-// The HTML shell of the pages a tech's link opens: the request and their queue.
+// The HTML shell of the pages a tech's link opens: the request and the repair queue.
 
 // The pages need nothing but their inline styles and forms that post back here. Customer text is
 // escaped too; this is in case something slips through, and keeps the pages out of frames.

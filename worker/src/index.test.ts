@@ -963,7 +963,14 @@ const taken = async (fields: Record<string, string>) => {
 	return link;
 };
 
-test("the queue lists a tech's repairs, rush first, then by drop-off", async () => {
+const tokenOf = (link: string) => link.split("/").pop()!;
+// Each repair in a tech's queue: the offer it links to, and who approved it.
+const queued = async (link: string) =>
+	[...(await (await queueOf(link)).text()).matchAll(/<li><a class="what" href="\/offers\/([0-9a-f-]+)">.*?Approved by (\w+)/gs)].map(
+		(match) => [match[1], match[2]],
+	);
+
+test("the queue lists the repairs, rush first, then by drop-off", async () => {
 	const later = await taken({ slot: iso(slotStart + 2 * quarter), name: "Later" });
 	await taken({ slot: iso(slotStart), name: "Early", phone: "416-555-0199" });
 	await taken({ slot: iso(slotStart + 3 * quarter), name: "Rushed", rush: "1" });
@@ -971,22 +978,48 @@ test("the queue lists a tech's repairs, rush first, then by drop-off", async () 
 	const response = await queueOf(later);
 	assert.equal(response.status, 200);
 	const body = await response.text();
+	assert.match(body, /<h1>Repair queue<\/h1>/);
 	assert.deepEqual([...body.matchAll(/PS5 disc · (\w+)/g)].map((match) => match[1]), ["Rushed", "Early", "Later"]);
 	assert.match(body, /3 repairs/);
 	assert.match(body, /<a class="what" href="\/offers\/[0-9a-f-]+">RUSH PS5 deep cleaning<\/a>/);
 	assert.match(body, /<a href="tel:4165550199">416-555-0199<\/a>/);
 	assert.match(body, /Drop-off \w{3}, /);
-	assert.match(await (await offerPage(later)).text(), new RegExp(`<a href="${new URL(later).pathname}/queue">Your queue</a>`));
+	assert.match(body, /Approved by you<\/span>/);
+	assert.match(await (await offerPage(later)).text(), new RegExp(`<a href="${new URL(later).pathname}/queue">Repair queue</a>`));
 });
 
-test("the queue only has the tech's own repairs, and none still open", async () => {
+test("every tech's queue has every approved repair, with who approved it and their own links", async () => {
 	both();
-	await submit({ slot: iso(slotStart) }); // open: in nobody's queue
+	await submit({ slot: iso(slotStart) });
 	const [richard, sam] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
-	assert.match(await (await queueOf(sam)).text(), /Nothing in your queue/);
+	assert.match(await (await queueOf(sam)).text(), /Nothing in the queue/); // open: not in it yet
 	await press(richard, "confirm");
-	assert.match(await (await queueOf(sam)).text(), /Nothing in your queue/);
-	assert.match(await (await queueOf(richard)).text(), /1 repair /);
+	mails = [];
+	await submit({ slot: iso(slotStart + quarter), name: "Bob", email: "bob@example.com" });
+	const [richardBob, samBob] = [linkFor("richard@example.com"), linkFor("sam@example.com")];
+	await press(samBob, "confirm");
+
+	// Any of a tech's links opens the same queue, linked to their own offers.
+	for (const link of [sam, samBob]) {
+		assert.deepEqual(await queued(link), [[tokenOf(sam), "Richard"], [tokenOf(samBob), "you"]]);
+	}
+	for (const link of [richard, richardBob]) {
+		assert.deepEqual(await queued(link), [[tokenOf(richard), "you"], [tokenOf(richardBob), "Sam"]]);
+	}
+});
+
+test("the queue lists a repair from before a tech was added, without a link for them", async () => {
+	await submit({}, {}, { TECHS: JSON.stringify([{ name: "Sam", calendarId: "sam@example.com" }]) });
+	await press(linkFor("sam@example.com"), "confirm");
+	mails = [];
+	await submit({ slot: iso(slotStart + quarter), name: "Bob", email: "bob@example.com" });
+	const richard = linkFor("richard@example.com");
+	await press(linkFor("sam@example.com"), "confirm");
+
+	const body = await (await queueOf(richard)).text();
+	assert.match(body, /2 repairs/);
+	assert.match(body, /<li><span class="what">PS5 deep cleaning<\/span>.*?Approved by Sam · No link for you: it came in before you were added<\/span>/s);
+	assert.deepEqual(await queued(richard), [[tokenOf(richard), "Sam"]]);
 });
 
 test("escapes what the customer wrote in the queue", async () => {
@@ -996,7 +1029,6 @@ test("escapes what the customer wrote in the queue", async () => {
 	assert.match(body, /&lt;b&gt;Jane/);
 });
 
-const tokenOf = (link: string) => link.split("/").pop()!;
 const finished = () => ({ ...(db.sqlite.prepare("SELECT done, done_by FROM requests").get() as any) });
 
 test("any tech can mark it done, one who declined the drop-off too, and then it leaves the queue", async () => {
@@ -1023,7 +1055,7 @@ test("any tech can mark it done, one who declined the drop-off too, and then it 
 	assert.match(mine, /You finished this repair/);
 	assert.match(mine, /Sam approved the drop-off, and it&#39;s out of the queue/);
 	for (const page of [his, mine]) assert.ok(!page.includes("<form"));
-	assert.match(await (await queueOf(sam)).text(), /Nothing in your queue/);
+	for (const link of [richard, sam]) assert.match(await (await queueOf(link)).text(), /Nothing in the queue/);
 });
 
 test("a repair is marked done only once, by the first tech to press it", async () => {

@@ -7,7 +7,8 @@
 //                        site (the form works without JS)
 //   GET  /offers/<token> one tech's link to a request: shows it, with buttons to take or decline it
 //   POST /offers/<token> those buttons
-//   GET  /offers/<token>/queue  that tech's queue: the repairs they took and haven't marked done
+//   GET  /offers/<token>/queue  the repair queue every tech shares: each approved repair not marked
+//                        done, linked to that tech's own offers
 // and hourly (the cron in wrangler.jsonc) expires the requests nobody took in time, deletes stray
 // holds, and deletes settled requests past RETENTION_DAYS.
 
