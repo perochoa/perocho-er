@@ -53,6 +53,11 @@ the failed send. After a post the worker redirects to `SITE_URL`, the live site;
 - `src/content/services/*.md`: one file per service, with its price.
 - `src/content/repairs/<yyyy-mm-slug>/index.md`: past repairs, with before/after photos beside
   them. The repo is public, so strip location data from photos before committing.
+- `src/content/gallery/gallery.yaml`: single photos and short clips from the bench, with the
+  photos beside it and the clips in `public/videos/`. Same rules as the repairs; re-encode clips
+  small and without metadata (`ffmpeg -map_metadata -1 -an`, 720 wide, H.264).
+- `src/reviews.ts`: the Marketplace rating and reviews, updated by hand. Unset hides them and
+  every link to Marketplace.
 
 Search engines and AI assistants read the same details: `src/structured-data.ts` builds the home
 page's JSON-LD and `src/pages/llms.txt.ts` serves `/llms.txt`, both from `src/site.ts` and the
@@ -62,7 +67,8 @@ services. `public/robots.txt` lets every crawler in, AI ones by name.
 
 Pushing to `main` deploys to GitHub Pages (`.github/workflows/deploy.yml`, built with
 `withastro/action`). `public/CNAME` sets the custom domain. Pull requests run
-`.github/workflows/ci.yml`, which builds the site and typechecks and tests the intake worker.
+`.github/workflows/ci.yml`, which typechecks and builds the site and runs the intake worker's
+checks and tests.
 
 Feature branches are made from `main` and tested on the branch itself. Once tested, each one
 is squash-merged into `main` through a pull request, which deploys.
