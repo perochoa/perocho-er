@@ -1,13 +1,15 @@
 // A request offered to each tech. Their link opens a page that shows the request and lets them
-// take or decline it, and mark it done once they've taken it. The page only shows it; the buttons
-// POST, because mail scanners open the links in emails and must not take requests by doing so.
-// Each link also opens that tech's queue: the repairs they took and haven't marked done.
+// approve its drop-off time or decline it, and mark the repair done once it's approved. The page
+// only shows it; the buttons POST, because mail scanners open the links in emails and must not
+// approve requests by doing so.
+// Each link also opens the repair queue the techs share: every approved repair not marked done.
 
 import { type Mail, sendMail } from "./fastmail.ts";
 import { accessToken, bookEvent, createEvent, deleteEvent } from "./google.ts";
 import { describe, dialable, formatTime, type Intake, stop, what } from "./intake.ts";
 import * as notices from "./notices.ts";
 import { escape, html } from "./pages.ts";
+import { parseTechs } from "./techs.ts";
 
 interface RequestRow {
 	id: string;
@@ -16,9 +18,10 @@ interface RequestRow {
 	slot_start: number;
 	slot_end: number;
 	status: "pending" | "confirmed" | "declined" | "expired";
-	confirmed_by: string | null;
+	confirmed_by: string | null; // the offer token of the tech who approved the drop-off
 	rush: number; // the fee, 0 for none
-	done: number | null; // when the tech who took it marked it done
+	done: number | null; // when a tech marked it done
+	done_by: string | null; // the offer token of that tech; null for ones done before 0005
 }
 
 interface OfferRow {
@@ -57,12 +60,13 @@ const send = async (env: Env, mails: Omit<Mail, "from">[]) => {
 	}
 };
 
-// Once the time has started nobody can take it; the scheduled job expires it.
+// Once the time has started nobody can approve it; the scheduled job expires it.
 const passed = (request: RequestRow, now = Date.now()) => request.slot_start <= now;
 
-// First tech to get here takes it: one statement, so two techs pressing at once can't both win. A
-// tech who declined can still change their mind while it's open. Other repairs at the same time
-// don't stop them: it's a drop-off time, and any number of devices can come in then.
+// First tech to get here approves the drop-off, and the device comes to them then: one statement,
+// so two techs pressing at once can't both win. Only the drop-off; the repair goes in the queue
+// for any tech. A tech who declined can still change their mind while it's open. Other repairs at
+// the same time don't stop them: it's a drop-off time, and any number of devices can come in then.
 async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	const won = await env.DB.prepare(
 		`UPDATE requests SET status = 'confirmed', confirmed_by = ?2
@@ -110,10 +114,11 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 	);
 	for (const result of results) if (result.status === "rejected") console.error(result.reason);
 
+	// Every other tech hears, those who declined the drop-off too: the repair is in their queue now.
 	await send(env, [
 		notices.confirmed(intake, time, offer.name),
 		...offers
-			.filter((other) => other.token !== offer.token && !other.declined)
+			.filter((other) => other.token !== offer.token)
 			.map((other) => notices.taken(intake, time, other.email, offer.name)),
 		notices.taken(intake, time, env.MAIL_TO, offer.name),
 	]);
@@ -122,8 +127,8 @@ async function confirm(env: Env, { offer, request, offers, intake }: Loaded) {
 // Takes only this tech out. Once nobody's left, the customer hears it's a no.
 async function decline(env: Env, { offer, request, intake }: Loaded) {
 	if (request.status !== "pending") return;
-	// Checked again here, not only on what was loaded: had they just taken it in another tab, their
-	// hold is now the booking and mustn't be deleted.
+	// Checked again here, not only on what was loaded: had they just approved it in another tab,
+	// their hold is now the booking and mustn't be deleted.
 	const changed = await env.DB.prepare(
 		`UPDATE offers SET declined = 1 WHERE token = ?1 AND declined = 0
 		 AND (SELECT status FROM requests WHERE id = ?2) = 'pending'`,
@@ -152,16 +157,18 @@ async function decline(env: Env, { offer, request, intake }: Loaded) {
 	await send(env, [notices.declined(intake, time), notices.nobody(intake, time, env.MAIL_TO)]);
 }
 
-// Out of the taker's queue once it's back with the customer. Only they can, and only once.
+// Out of the queue once it's back with the customer. Approving only settled the drop-off, so any
+// tech with a link to it may have done the repair, one who declined the drop-off too. Only once,
+// so it keeps the first tech who said so.
 async function finish(env: Env, { offer, request }: Loaded) {
 	await env.DB.prepare(
-		"UPDATE requests SET done = ?3 WHERE id = ?1 AND status = 'confirmed' AND confirmed_by = ?2 AND done IS NULL",
+		"UPDATE requests SET done = ?3, done_by = ?2 WHERE id = ?1 AND status = 'confirmed' AND done IS NULL",
 	)
 		.bind(request.id, offer.token, Date.now())
 		.run();
 }
 
-// Run by the cron in wrangler.jsonc. Closes the requests nobody took in time and tells the
+// Run by the cron in wrangler.jsonc. Closes the requests nobody approved in time and tells the
 // customer, then deletes the holds nobody needs any more: a declined tech's, and every hold but
 // the booking once a request is settled. Holds whose delete failed earlier are among them. Last,
 // it deletes the customer's details once a request is settled and RETENTION_DAYS past its time.
@@ -203,8 +210,8 @@ export async function expire(env: Env, now = Date.now()): Promise<void> {
 		}
 	}
 
-	// Settled: nobody took it, or it's back with the customer. A repair still in someone's queue
-	// stays however old it is, and so does one with a hold still to delete, since its offer is the
+	// Settled: nobody approved it, or it's back with the customer. A repair still in the queue stays
+	// however old it is, and so does one with a hold still to delete, since its offer is the
 	// only record of the hold. Offers first, since they point at the request.
 	const settled = `SELECT id FROM requests WHERE slot_start < ?1
 		AND (status IN ('declined', 'expired') OR done IS NOT NULL)
@@ -226,38 +233,42 @@ export async function act(env: Env, token: string, action: string): Promise<void
 }
 
 // What a tech's link says, and the buttons it offers, for where the request stands.
-function view(offer: OfferRow, request: RequestRow, taker: OfferRow | undefined, intake: Intake, time: string): [string, string, string] {
-	const take = '<button name="action" value="confirm">Take it</button>';
+function view({ offer, request, offers, intake }: Loaded, time: string): [string, string, string] {
+	// The tech behind an offer token, as "You" on their own page.
+	const who = (token: string | null) =>
+		token === offer.token ? "You" : (offers.find((other) => other.token === token)?.name ?? "Another tech");
+	const approve = '<button name="action" value="confirm">Approve drop-off</button>';
 	if (request.status === "confirmed") {
-		if (taker?.token === offer.token) {
-			if (request.done !== null) return ["You finished this repair", "It's out of your queue.", ""];
-			return [
-				"You took this request",
-				"It's yours, and the customer has been told. Agree with them when it'll be ready, and mark it done once it's back with them.",
-				'<button name="action" value="done">Mark done</button>',
-			];
+		const approved = `${who(request.confirmed_by)} approved the drop-off`;
+		if (request.done !== null) {
+			// Before done_by, only the approver could mark it done.
+			const finisher = who(request.done_by ?? request.confirmed_by);
+			return [`${finisher} finished this repair`, `${approved}, and it's out of the queue.`, ""];
 		}
-		return [`${taker?.name ?? "Another tech"} took this request`, "Nothing for you to do.", ""];
+		return [
+			approved,
+			"The customer has been told, and it's in the repair queue for any tech to pick up. Whoever does the repair agrees with them when it'll be ready, and marks it done once it's back with them.",
+			'<button name="action" value="done">Mark done</button>',
+		];
 	}
 	if (request.status === "declined") return ["Every tech declined this request", "The customer has been told.", ""];
-	if (request.status === "expired") return ["This request expired", "Nobody took it in time, and the customer has been told.", ""];
-	if (passed(request)) return ["This time has passed", "Nobody took it in time, so it can't be taken now.", ""];
-	if (offer.declined) return ["You declined this request", "It's still open for the others, so you can take it after all.", take];
+	if (request.status === "expired") return ["This request expired", "Nobody approved the drop-off in time, and the customer has been told.", ""];
+	if (passed(request)) return ["This time has passed", "Nobody approved the drop-off in time, so it can't be approved now.", ""];
+	if (offer.declined) return ["You declined this request", "It's still open for the others, so you can approve the drop-off after all.", approve];
 	return [
 		intake.rush ? "New rush repair request" : "New repair request",
-		`Drop-off ${stop(time)} The first tech to take it gets it.`,
-		take + '<button name="action" value="decline">Decline</button>',
+		`Drop-off ${stop(time)} The first tech to approve gets the drop-off, and the repair goes in the queue for any tech to pick up.`,
+		approve + '<button name="action" value="decline">Decline</button>',
 	];
 }
 
 export async function page(env: Env, token: string): Promise<Response> {
 	const loaded = await load(env.DB, token);
 	if (!loaded) return html("Request not found", "<h1>Request not found</h1><p>This link doesn't match a request.</p>", 404);
-	const { offer, request, offers, intake } = loaded;
+	const { offer, request, intake } = loaded;
 	const time = timeOf(env, request);
-	const taker = offers.find((other) => other.token === request.confirmed_by);
 
-	const [title, state, buttons] = view(offer, request, taker, intake, time);
+	const [title, state, buttons] = view(loaded, time);
 
 	// Payment is in person, so the fee is only a reminder.
 	const rush = intake.rush
@@ -271,21 +282,30 @@ export async function page(env: Env, token: string): Promise<Response> {
 <p class="state">${escape(state)}</p>
 ${rush}${call}<pre>${escape(describe(intake, time))}</pre>
 ${buttons && `<form method="post">${buttons}</form>`}
-<p class="mine"><a href="/offers/${offer.token}/queue">Your queue</a></p>`,
+<p class="mine"><a href="/offers/${offer.token}/queue">Repair queue</a></p>`,
 	);
 }
 
-// The repairs this tech took and hasn't marked done, in the order to work them: rush first, then
-// the earliest drop-off, then the first filed. A tech is their calendar, as everywhere else a
-// request meets one. `rush > 0`, not `rush`: a rush is a rush whatever fee it was quoted at.
-const QUEUE_SQL = `SELECT requests.*, offers.token FROM requests JOIN offers ON offers.token = requests.confirmed_by
-	WHERE requests.status = 'confirmed' AND requests.done IS NULL AND offers.calendar_id = ?
-	ORDER BY requests.rush > 0 DESC, requests.slot_start, requests.created`;
+// One queue for every tech: each approved repair nobody has marked done, whoever approved it, in
+// the order to work them: rush first, then the earliest drop-off, then the first filed. `rush > 0`,
+// not `rush`: a rush is a rush whatever fee it was quoted at. Each has who approved it, and the
+// viewing tech's own offer for it, so what they press there is recorded as them. A tech is their
+// calendar, as everywhere else a request meets one; one added to TECHS since it came in has none.
+const QUEUE_SQL = `SELECT requests.*,
+	(SELECT name FROM offers WHERE token = requests.confirmed_by) AS approver,
+	(SELECT token FROM offers WHERE request_id = requests.id AND calendar_id = ?1 ORDER BY position LIMIT 1) AS mine
+	FROM requests WHERE status = 'confirmed' AND done IS NULL
+	ORDER BY rush > 0 DESC, slot_start, created`;
+
+type Queued = RequestRow & { approver: string | null; mine: string | null };
 
 export async function queue(env: Env, token: string): Promise<Response> {
 	const offer = await env.DB.prepare("SELECT * FROM offers WHERE token = ?").bind(token).first<OfferRow>();
-	if (!offer) return html("Queue not found", "<h1>Queue not found</h1><p>This link doesn't match a request.</p>", 404);
-	const { results } = await env.DB.prepare(QUEUE_SQL).bind(offer.calendar_id).all<RequestRow & { token: string }>();
+	// Links outlive a tech's place in TECHS, and the queue shows every customer, so only a tech still
+	// on the list may open it. A removed tech's old link answers like an unknown one.
+	const current = offer && parseTechs(env.TECHS).some((tech) => tech.calendarId === offer.calendar_id);
+	if (!offer || !current) return html("Queue not found", "<h1>Queue not found</h1><p>This link doesn't match a request.</p>", 404);
+	const { results } = await env.DB.prepare(QUEUE_SQL).bind(offer.calendar_id).all<Queued>();
 
 	const items = results.map((request) => {
 		const intake: Intake = JSON.parse(request.intake);
@@ -293,20 +313,27 @@ export async function queue(env: Env, token: string): Promise<Response> {
 		// The device too, when the title is the service.
 		const details = [`Drop-off ${time}`, intake.service && intake.device, intake.name].filter((detail) => detail);
 		const call = ` · <a href="tel:${escape(dialable(intake.phone))}">${escape(intake.phone)}</a>`;
-		return `<li><a class="what" href="/offers/${request.token}">${request.rush ? "RUSH " : ""}${escape(what(intake))}</a><br>
-<span class="details">${details.map(escape).join(" · ")}${call}</span></li>`;
+		const title = `${request.rush ? "RUSH " : ""}${escape(what(intake))}`;
+		const approver = request.mine === request.confirmed_by ? "you" : escape(request.approver ?? "another tech");
+		// Without an offer of their own there's no page to press anything on.
+		const [heading, unlinked] = request.mine
+			? [`<a class="what" href="/offers/${request.mine}">${title}</a>`, ""]
+			: [`<span class="what">${title}</span>`, " · No link for you: it came in before you were added"];
+		return `<li>${heading}<br>
+<span class="details">${details.map(escape).join(" · ")}${call}<br>
+Approved by ${approver}${unlinked}</span></li>`;
 	});
 	const count = `${results.length} repair${results.length === 1 ? "" : "s"}`;
 	return html(
-		"Your queue",
-		`<h1>Your queue</h1>
+		"Repair queue",
+		`<h1>Repair queue</h1>
 ${
 	items.length > 0
-		? `<p class="state">${count} you took and haven't marked done: rush first, then by drop-off time. Fewer "Available" blocks on your calendar means fewer new ones.</p>
+		? `<p class="state">${count} approved and not marked done, for any tech to pick up: rush first, then by drop-off time. Whoever does one marks it done on its page.</p>
 <ol class="queue">
 ${items.join("\n")}
 </ol>`
-		: `<p class="state">Nothing in your queue. Repairs you take show up here until you mark them done.</p>`
+		: `<p class="state">Nothing in the queue. Repairs show up here once a tech approves the drop-off, until one marks them done.</p>`
 }`,
 	);
 }
