@@ -9,11 +9,42 @@ Needs Node 24 or later (`engines` in `package.json`).
 
 ```sh
 npm ci
-npm run dev      # local dev server
+npm run dev      # local dev server on http://localhost:4321
 npm run build    # static build into dist/
 npm run preview  # serve the built dist/
 npm run check    # typecheck (astro check)
 ```
+
+### Running the request form locally
+
+The form needs the intake worker running beside the dev server.
+
+1. Put the worker's secrets in `worker/.dev.vars` (gitignored), each on one line, and let the dev
+   server read `/slots`, which otherwise only `SITE_URL` may:
+
+   ```sh
+   DEV_ORIGINS=http://localhost:4321
+   TECHS=[{"name":"...","calendarId":"...","email":"..."}]
+   GOOGLE_SERVICE_ACCOUNT={"client_email":"...","private_key":"..."}
+   FASTMAIL_TOKEN=
+   ```
+
+2. Start the worker on <http://localhost:8787>, with a local database:
+
+   ```sh
+   cd worker
+   npm ci
+   npx wrangler d1 migrations apply DB --local
+   npx wrangler dev
+   ```
+
+3. Point `intakeUrl` in `src/site.ts` at `http://localhost:8787` (don't commit that) and run
+   `npm run dev`.
+
+The calendars are real: a request puts holds on the calendars in `TECHS`, so list only your own.
+With `FASTMAIL_TOKEN` empty no email goes out; the request still goes through and the worker logs
+the failed send. After a post the worker redirects to `SITE_URL`, the live site; add
+`SITE_URL=http://localhost:4321` to `.dev.vars` to come back to the dev server.
 
 ## Content
 
@@ -40,28 +71,3 @@ is squash-merged into `main` through a pull request, which deploys.
 
 The repair request form (`/request/`) posts to a Cloudflare Worker in `worker/`, a separate npm
 package. See [`worker/README.md`](worker/README.md).
-
-# Testing local
-
-## 1. Create Env Vars
-
-- Create `workers/.dev.vars`
-  Values Required:
-
-```
-DEV_ORIGINS=http://localhost:4321
-TECHS=[{"name":"...","calendarId":"...","email":"..."}]
-GOOGLE_SERVICE_ACCOUNT={"client_email":"...","private_key":"..."}
-FASTMAIL_TOKEN=
-```
-
-## 2 Setup Worker
-
-`cd worker`
-`npx d1 wrangler migrations apply DB --local`
-`npx wrangler dev` <!--serves on http://localhost:8787 -->
-
-## Run
-
-- set `src/site.ts` `intakeUrl=http://localhost:8787`
-- `npm run dev`

@@ -152,17 +152,12 @@ npm run types   # regenerate worker-configuration.d.ts after changing wrangler.j
 `wrangler.jsonc`. Commit it; CI fails if it's out of date. Add a new secret to
 `secrets.required` as well: that types it, and deploy fails until it's set.
 
-Only `SITE_URL` may read `/slots` from a browser. To try the form from `npm run dev` on the site
-with `npx wrangler dev`, allow the dev server in a `worker/.dev.vars` file (gitignored), along
-with the secrets:
+To try the form from the site's dev server against `npx wrangler dev`, see
+[Running the request form locally](../README.md#running-the-request-form-locally).
 
-```sh
-DEV_ORIGINS=http://localhost:4321
-```
-
-`npx wrangler dev` uses a local database; create its tables with
-`npx wrangler d1 migrations apply DB --local`. Schema changes are new numbered files in
-`migrations/`; never edit one that's been applied.
+Schema changes are new numbered files in `migrations/`; never edit one that's been applied. CI
+applies new ones before it deploys the code, so each must keep working with the code that's live
+until the deploy finishes.
 
 Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
 already sent keep going to the techs they were sent to. A tech added later still sees the
