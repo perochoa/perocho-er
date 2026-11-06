@@ -261,8 +261,12 @@ const weekdays = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 			scrollToDay(picked, motion());
 		});
 		times.addEventListener("change", () => (error.textContent = ""));
-		prevWeek.addEventListener("click", () => week.scrollBy({ left: -week.clientWidth, behavior: motion() }));
-		nextWeek.addEventListener("click", () => week.scrollBy({ left: week.clientWidth, behavior: motion() }));
+		// The arrows go to the week beside the one in view, not a width on from wherever the row is: on
+		// phones the row can be a fraction of a pixel narrower than clientWidth, and some browsers snap
+		// a scroll that ends just past a week on to the week after it.
+		const step = (by: number) => week.scrollTo({ left: (page() + by) * week.clientWidth, behavior: motion() });
+		prevWeek.addEventListener("click", () => step(-1));
+		nextWeek.addEventListener("click", () => step(1));
 		week.addEventListener("scroll", () => requestAnimationFrame(updateWeek), { passive: true });
 
 		const REFRESH_MS = 60_000;
