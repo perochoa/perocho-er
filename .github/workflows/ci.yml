@@ -1,10 +1,7 @@
 name: CI
 
-# Checks only: no secrets and no deploy steps, so running on dev pushes can't ship anything.
+# Checks only: no secrets and no deploy steps, so running on pull requests can't ship anything.
 on:
-  push:
-    branches:
-      - dev
   pull_request:
     branches:
       - main
