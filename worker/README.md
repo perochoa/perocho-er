@@ -5,8 +5,7 @@ Google Calendar to offer open drop-off times, and offers each request to every t
 with a tentative hold on the calendar of every tech free at the picked time. The first tech to
 approve the drop-off gets the device at that time, the repair goes in one queue all the techs
 share, and the customer is emailed at each step. Repairs are drop-off only: the picked time is
-when the customer brings the device in, and any number of customers can pick the same time.
-When it'll be ready is up to the tech who does the repair and the customer, by phone or email.
+when the customer brings the device in. When it'll be ready is up to the tech who does the repair and the customer, by phone or email.
 A time and a phone number are required; without JS, or when there are no open times, the form
 points people to Messenger and email instead. A customer can ask for a rush (+$20, paid in
 person like the rest), which puts their repair at the front of the queue.
@@ -45,7 +44,7 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   - **Decline:** takes only you out of the drop-off; your hold is deleted and the others can
     still approve it. You can change your mind and approve it while it's open. Once every tech
     has declined, the customer is told nobody can take it. Declining the drop-off isn't
-    declining the repair: once someone approves it, you can still pick it up from the queue.
+    declining the repair: you can still pick it up from the queue.
   - **Nobody approves it in time:** once the picked time starts it can't be approved, and within
     the hour it expires: any holds are deleted and the customer is told nobody could take it.
 - **To cancel or move a drop-off**, the tech who approved it changes or deletes the booking and
@@ -53,9 +52,10 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
 - **The repair queue is shared.** The "Repair queue" link at the bottom of any of your request
   pages shows every approved repair not marked done yet, rush first, then by drop-off time, each
   with who approved it (the device comes to them), the customer's number and a link to its
-  page. Every tech sees the same queue, and it's up to you which ones you can and want to do. Whoever does one agrees with the customer when it'll be ready. Nothing in the
-  queue says who's working on what, so tell the others when you pick one up. A repair that came
-  in before you were added to `TECHS` is listed without a link, since it wasn't sent to you.
+  page. Every tech sees the same queue, and it's up to you which ones you can and want to do.
+  Nothing in the queue says who's working on what, so tell the others when you pick one up. A
+  repair that came in before you were added to `TECHS` is listed without a link, since it wasn't
+  sent to you.
 - **Mark done** on a repair's page once it's back with the customer. Any tech can, whoever
   approved the drop-off, and one who declined it too. It leaves the queue for everyone, and its
   page shows who approved it and who finished it. Only the first press counts, and it can't be
@@ -67,12 +67,8 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   when every tech declines or it expires, and if it failed to go through.
 - If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
   the calendar too: the hold has everything the email would have, including your link.
-- Times are offered from 2 hours ahead, on the quarter hour inside each block. The form's row
-  of days shows the next 31 days, and its calendar the current month and the 11 after it; each
-  month is read from the calendars when someone opens it (`GET /slots?month=YYYY-MM`)
-  (`LEAD_HOURS`, `DAYS_AHEAD`, `MONTHS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
-  `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same (`npm test` fails if they
-  differ).
+- Times are offered from 2 hours ahead. The form's row of days shows the next 31 days, and its
+  calendar the current month and the 11 after it.
 
 ## Setup
 
