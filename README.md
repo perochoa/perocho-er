@@ -9,11 +9,42 @@ Needs Node 24 or later (`engines` in `package.json`).
 
 ```sh
 npm ci
-npm run dev      # local dev server
+npm run dev      # local dev server on http://localhost:4321
 npm run build    # static build into dist/
 npm run preview  # serve the built dist/
 npm run check    # typecheck (astro check)
 ```
+
+### Running the request form locally
+
+The form needs the intake worker running beside the dev server.
+
+1. Put the worker's secrets in `worker/.dev.vars` (gitignored), each on one line, and let the dev
+   server read `/slots`, which otherwise only `SITE_URL` may:
+
+   ```sh
+   DEV_ORIGINS=http://localhost:4321
+   TECHS=[{"name":"...","calendarId":"...","email":"..."}]
+   GOOGLE_SERVICE_ACCOUNT={"client_email":"...","private_key":"..."}
+   FASTMAIL_TOKEN=
+   ```
+
+2. Start the worker on <http://localhost:8787>, with a local database:
+
+   ```sh
+   cd worker
+   npm ci
+   npx wrangler d1 migrations apply DB --local
+   npx wrangler dev
+   ```
+
+3. Point `intakeUrl` in `src/site.ts` at `http://localhost:8787` (don't commit that) and run
+   `npm run dev`.
+
+The calendars are real: a request puts holds on the calendars in `TECHS`, so list only your own.
+With `FASTMAIL_TOKEN` empty no email goes out; the request still goes through and the worker logs
+the failed send. After a post the worker redirects to `SITE_URL`, the live site; add
+`SITE_URL=http://localhost:4321` to `.dev.vars` to come back to the dev server.
 
 ## Content
 
@@ -22,6 +53,11 @@ npm run check    # typecheck (astro check)
 - `src/content/services/*.md`: one file per service, with its price.
 - `src/content/repairs/<yyyy-mm-slug>/index.md`: past repairs, with before/after photos beside
   them. The repo is public, so strip location data from photos before committing.
+- `src/content/gallery/gallery.yaml`: single photos and short clips from the bench, with the
+  photos beside it and the clips in `public/videos/`. Same rules as the repairs; re-encode clips
+  small and without metadata (`ffmpeg -map_metadata -1 -an`, 720 wide, H.264).
+- `src/reviews.ts`: the Marketplace rating and reviews, updated by hand. Unset hides them and
+  every link to Marketplace.
 
 Search engines and AI assistants read the same details: `src/structured-data.ts` builds the home
 page's JSON-LD and `src/pages/llms.txt.ts` serves `/llms.txt`, both from `src/site.ts` and the
@@ -31,7 +67,8 @@ services. `public/robots.txt` lets every crawler in, AI ones by name.
 
 Pushing to `main` deploys to GitHub Pages (`.github/workflows/deploy.yml`, built with
 `withastro/action`). `public/CNAME` sets the custom domain. Pull requests run
-`.github/workflows/ci.yml`, which builds the site and typechecks and tests the intake worker.
+`.github/workflows/ci.yml`, which typechecks and builds the site and runs the intake worker's
+checks and tests.
 
 Feature branches are made from `main` and tested on the branch itself. Once tested, each one
 is squash-merged into `main` through a pull request, which deploys.
@@ -40,28 +77,3 @@ is squash-merged into `main` through a pull request, which deploys.
 
 The repair request form (`/request/`) posts to a Cloudflare Worker in `worker/`, a separate npm
 package. See [`worker/README.md`](worker/README.md).
-
-# Testing local
-
-## 1. Create Env Vars
-
-- Create `workers/.dev.vars`
-  Values Required:
-
-```
-DEV_ORIGINS=http://localhost:4321
-TECHS=[{"name":"...","calendarId":"...","email":"..."}]
-GOOGLE_SERVICE_ACCOUNT={"client_email":"...","private_key":"..."}
-FASTMAIL_TOKEN=
-```
-
-## 2 Setup Worker
-
-`cd worker`
-`npx d1 wrangler migrations apply DB --local`
-`npx wrangler dev` <!--serves on http://localhost:8787 -->
-
-## Run
-
-- set `src/site.ts` `intakeUrl=http://localhost:8787`
-- `npm run dev`

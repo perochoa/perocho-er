@@ -5,11 +5,11 @@ Google Calendar to offer open drop-off times, and offers each request to every t
 with a tentative hold on the calendar of every tech free at the picked time. The first tech to
 approve the drop-off gets the device at that time, the repair goes in one queue all the techs
 share, and the customer is emailed at each step. Repairs are drop-off only: the picked time is
-when the customer brings the device in, and any number of customers can pick the same time.
-When it'll be ready is up to the tech who does the repair and the customer, by phone or email.
-A time and a phone number are required; without JS, or when there are no open times, the form
-points people to Messenger and email instead. A customer can ask for a rush (+$20, paid in
-person like the rest), which puts their repair at the front of the queue.
+when the customer brings the device in. When it'll be ready is up to the tech who does the
+repair and the customer, by phone or email. A time and a phone number are required; without JS,
+or when there are no open times, the form points people to Messenger and email instead. A
+customer can ask for a rush (+$20, paid in person like the rest), which puts their repair at the
+front of the queue.
 
 Messenger, email and Facebook Marketplace stay as they are. The form is one more way in.
 
@@ -45,7 +45,7 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   - **Decline:** takes only you out of the drop-off; your hold is deleted and the others can
     still approve it. You can change your mind and approve it while it's open. Once every tech
     has declined, the customer is told nobody can take it. Declining the drop-off isn't
-    declining the repair: once someone approves it, you can still pick it up from the queue.
+    declining the repair: you can still pick it up from the queue.
   - **Nobody approves it in time:** once the picked time starts it can't be approved, and within
     the hour it expires: any holds are deleted and the customer is told nobody could take it.
 - **To cancel or move a drop-off**, the tech who approved it changes or deletes the booking and
@@ -53,9 +53,10 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
 - **The repair queue is shared.** The "Repair queue" link at the bottom of any of your request
   pages shows every approved repair not marked done yet, rush first, then by drop-off time, each
   with who approved it (the device comes to them), the customer's number and a link to its
-  page. Every tech sees the same queue, and it's up to you which ones you can and want to do. Whoever does one agrees with the customer when it'll be ready. Nothing in the
-  queue says who's working on what, so tell the others when you pick one up. A repair that came
-  in before you were added to `TECHS` is listed without a link, since it wasn't sent to you.
+  page. Every tech sees the same queue, and it's up to you which ones you can and want to do.
+  Nothing in the queue says who's working on what, so tell the others when you pick one up. A
+  repair that came in before you were added to `TECHS` is listed without a link, since it wasn't
+  sent to you.
 - **Mark done** on a repair's page once it's back with the customer. Any tech can, whoever
   approved the drop-off, and one who declined it too. It leaves the queue for everyone, and its
   page shows who approved it and who finished it. Only the first press counts, and it can't be
@@ -67,12 +68,8 @@ Messenger, email and Facebook Marketplace stay as they are. The form is one more
   when every tech declines or it expires, and if it failed to go through.
 - If the emails fail to send, the customer still lands on "sent" when a hold was made, so check
   the calendar too: the hold has everything the email would have, including your link.
-- Times are offered from 2 hours ahead, on the quarter hour inside each block. The form's row
-  of days shows the next 31 days, and its calendar the current month and the 11 after it; each
-  month is read from the calendars when someone opens it (`GET /slots?month=YYYY-MM`)
-  (`LEAD_HOURS`, `DAYS_AHEAD`, `MONTHS_AHEAD`, `SLOT_MINUTES` in `wrangler.jsonc`). The rush fee is
-  `RUSH_FEE` there and `rushFee` in `src/site.ts`; keep them the same (`npm test` fails if they
-  differ).
+- Times are offered from 2 hours ahead. The form's row of days shows the next 31 days, and its
+  calendar the current month and the 11 after it.
 
 ## Setup
 
@@ -125,14 +122,32 @@ All free tiers. Do these once.
    Wrangler finds the account from the token, so no account ID is needed while the token covers
    only one account.
 
+## Changing the techs
+
+Run `npx wrangler secret put TECHS` again; no deploy needed. Requests already sent keep going to
+the techs they were sent to. A tech added later still sees the earlier repairs in the queue,
+without links, so they can't mark those done. A tech taken out of the list can't open the queue
+any more, even from old links.
+
+To check a TECHS list before or after setting it, put it in `techs.json` here (gitignored) and
+the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or save the
+key as `service-account.json` here (also gitignored) and pass `--key service-account.json`:
+
+```sh
+npm run check-techs             # the list, calendar sharing, "Available" blocks and open times
+npm run check-techs -- --send   # also emails each tech a test (FASTMAIL_TOKEN in .dev.vars)
+```
+
+It changes nothing on the calendars, and exits 1 if any check failed.
+
 ## Deploys
 
 Merging to `main` deploys the worker from CI when anything under `worker/` changed
-(`.github/workflows/deploy.yml`), applying any new `migrations/` to the database first. Running the workflow by hand (Actions > Deploy to GitHub Pages >
-Run workflow) always deploys the worker, then the site. The job runs the types check, typecheck
-and tests first, and the site deploys only after it, so a site change that needs a new worker
-response never goes out first. When nothing under `worker/` changed, the worker job is skipped
-and the site deploys on its own. If the worker job fails, the site doesn't deploy either.
+(`.github/workflows/deploy.yml`): the same checks as CI, then any new `migrations/`, then the
+worker, and only then the site, so a site change that needs a new worker response never goes out
+first. If the worker job fails, the site doesn't deploy either. When nothing under `worker/`
+changed, the site deploys on its own. Running the workflow by hand (Actions > Deploy to GitHub
+Pages > Run workflow) always deploys the worker, then the site.
 
 `npx wrangler deploy` from this folder still works for a hotfix; the next merge that touches
 `worker/` deploys `main` over it, so merge the fix too. Secrets aren't part of a deploy: set
@@ -152,33 +167,17 @@ npm run types   # regenerate worker-configuration.d.ts after changing wrangler.j
 `wrangler.jsonc`. Commit it; CI fails if it's out of date. Add a new secret to
 `secrets.required` as well: that types it, and deploy fails until it's set.
 
-Only `SITE_URL` may read `/slots` from a browser. To try the form from `npm run dev` on the site
-with `npx wrangler dev`, allow the dev server in a `worker/.dev.vars` file (gitignored), along
-with the secrets:
+The drop-off times come from `SLOT_MINUTES`, `LEAD_HOURS`, `DAYS_AHEAD` and `MONTHS_AHEAD` in
+`wrangler.jsonc`; the form reads each month past the row of days from the calendars when someone
+opens it (`GET /slots?month=YYYY-MM`). The rush fee is `RUSH_FEE` there and `rushFee` in
+`src/site.ts`; keep them the same (`npm test` fails if they differ).
 
-```sh
-DEV_ORIGINS=http://localhost:4321
-```
+To try the form from the site's dev server against `npx wrangler dev`, see
+[Running the request form locally](../README.md#running-the-request-form-locally).
 
-`npx wrangler dev` uses a local database; create its tables with
-`npx wrangler d1 migrations apply DB --local`. Schema changes are new numbered files in
-`migrations/`; never edit one that's been applied.
-
-Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
-already sent keep going to the techs they were sent to. A tech added later still sees the
-earlier repairs in the queue, without links, so they can't mark those done. A tech taken out of
-the list can't open the queue any more, even from old links.
-
-To check a TECHS list before or after setting it, put it in `techs.json` here (gitignored) and
-the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or save the
-key as `service-account.json` here (also gitignored) and pass `--key service-account.json`:
-
-```sh
-npm run check-techs             # the list, calendar sharing, "Available" blocks and open times
-npm run check-techs -- --send   # also emails each tech a test (FASTMAIL_TOKEN in .dev.vars)
-```
-
-It changes nothing on the calendars, and exits 1 if any check failed.
+Schema changes are new numbered files in `migrations/`; never edit one that's been applied. CI
+applies new ones before it deploys the code, so each must keep working with the code that's live
+until the deploy finishes.
 
 ## Customer data
 
@@ -209,5 +208,6 @@ Two defences, neither needing JS:
 
   `GET /slots` has its own limit, **40 fetches a minute** per IP (`SLOTS_LIMITER`), since each one
   reads every tech's calendar. It's higher than the form's own refreshes need because paging
-  through the calendar's months fetches each one. Past it the worker answers 429, and the form says it couldn't
-  load the times and points people to Messenger and email. These show up as `rate limited /slots`.
+  through the calendar's months fetches each one. Past it the worker answers 429, and the form
+  says it couldn't load the times and points people to Messenger and email. These show up as
+  `rate limited /slots`.
