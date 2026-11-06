@@ -5,10 +5,11 @@ Google Calendar to offer open drop-off times, and offers each request to every t
 with a tentative hold on the calendar of every tech free at the picked time. The first tech to
 approve the drop-off gets the device at that time, the repair goes in one queue all the techs
 share, and the customer is emailed at each step. Repairs are drop-off only: the picked time is
-when the customer brings the device in. When it'll be ready is up to the tech who does the repair and the customer, by phone or email.
-A time and a phone number are required; without JS, or when there are no open times, the form
-points people to Messenger and email instead. A customer can ask for a rush (+$20, paid in
-person like the rest), which puts their repair at the front of the queue.
+when the customer brings the device in. When it'll be ready is up to the tech who does the
+repair and the customer, by phone or email. A time and a phone number are required; without JS,
+or when there are no open times, the form points people to Messenger and email instead. A
+customer can ask for a rush (+$20, paid in person like the rest), which puts their repair at the
+front of the queue.
 
 Messenger, email and Facebook Marketplace stay as they are. The form is one more way in.
 
@@ -121,14 +122,32 @@ All free tiers. Do these once.
    Wrangler finds the account from the token, so no account ID is needed while the token covers
    only one account.
 
+## Changing the techs
+
+Run `npx wrangler secret put TECHS` again; no deploy needed. Requests already sent keep going to
+the techs they were sent to. A tech added later still sees the earlier repairs in the queue,
+without links, so they can't mark those done. A tech taken out of the list can't open the queue
+any more, even from old links.
+
+To check a TECHS list before or after setting it, put it in `techs.json` here (gitignored) and
+the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or save the
+key as `service-account.json` here (also gitignored) and pass `--key service-account.json`:
+
+```sh
+npm run check-techs             # the list, calendar sharing, "Available" blocks and open times
+npm run check-techs -- --send   # also emails each tech a test (FASTMAIL_TOKEN in .dev.vars)
+```
+
+It changes nothing on the calendars, and exits 1 if any check failed.
+
 ## Deploys
 
 Merging to `main` deploys the worker from CI when anything under `worker/` changed
-(`.github/workflows/deploy.yml`), applying any new `migrations/` to the database first. Running the workflow by hand (Actions > Deploy to GitHub Pages >
-Run workflow) always deploys the worker, then the site. The job runs the types check, typecheck
-and tests first, and the site deploys only after it, so a site change that needs a new worker
-response never goes out first. When nothing under `worker/` changed, the worker job is skipped
-and the site deploys on its own. If the worker job fails, the site doesn't deploy either.
+(`.github/workflows/deploy.yml`): the same checks as CI, then any new `migrations/`, then the
+worker, and only then the site, so a site change that needs a new worker response never goes out
+first. If the worker job fails, the site doesn't deploy either. When nothing under `worker/`
+changed, the site deploys on its own. Running the workflow by hand (Actions > Deploy to GitHub
+Pages > Run workflow) always deploys the worker, then the site.
 
 `npx wrangler deploy` from this folder still works for a hotfix; the next merge that touches
 `worker/` deploys `main` over it, so merge the fix too. Secrets aren't part of a deploy: set
@@ -148,28 +167,17 @@ npm run types   # regenerate worker-configuration.d.ts after changing wrangler.j
 `wrangler.jsonc`. Commit it; CI fails if it's out of date. Add a new secret to
 `secrets.required` as well: that types it, and deploy fails until it's set.
 
+The drop-off times come from `SLOT_MINUTES`, `LEAD_HOURS`, `DAYS_AHEAD` and `MONTHS_AHEAD` in
+`wrangler.jsonc`; the form reads each month past the row of days from the calendars when someone
+opens it (`GET /slots?month=YYYY-MM`). The rush fee is `RUSH_FEE` there and `rushFee` in
+`src/site.ts`; keep them the same (`npm test` fails if they differ).
+
 To try the form from the site's dev server against `npx wrangler dev`, see
 [Running the request form locally](../README.md#running-the-request-form-locally).
 
 Schema changes are new numbered files in `migrations/`; never edit one that's been applied. CI
 applies new ones before it deploys the code, so each must keep working with the code that's live
 until the deploy finishes.
-
-Changing who's a tech is `npx wrangler secret put TECHS` again; no deploy needed. Requests
-already sent keep going to the techs they were sent to. A tech added later still sees the
-earlier repairs in the queue, without links, so they can't mark those done. A tech taken out of
-the list can't open the queue any more, even from old links.
-
-To check a TECHS list before or after setting it, put it in `techs.json` here (gitignored) and
-the service account key in `.dev.vars` as `GOOGLE_SERVICE_ACCOUNT=...` on one line, or save the
-key as `service-account.json` here (also gitignored) and pass `--key service-account.json`:
-
-```sh
-npm run check-techs             # the list, calendar sharing, "Available" blocks and open times
-npm run check-techs -- --send   # also emails each tech a test (FASTMAIL_TOKEN in .dev.vars)
-```
-
-It changes nothing on the calendars, and exits 1 if any check failed.
 
 ## Customer data
 
@@ -200,5 +208,6 @@ Two defences, neither needing JS:
 
   `GET /slots` has its own limit, **40 fetches a minute** per IP (`SLOTS_LIMITER`), since each one
   reads every tech's calendar. It's higher than the form's own refreshes need because paging
-  through the calendar's months fetches each one. Past it the worker answers 429, and the form says it couldn't
-  load the times and points people to Messenger and email. These show up as `rate limited /slots`.
+  through the calendar's months fetches each one. Past it the worker answers 429, and the form
+  says it couldn't load the times and points people to Messenger and email. These show up as
+  `rate limited /slots`.
